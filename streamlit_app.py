@@ -11,6 +11,7 @@ from reportlab.lib.pagesizes import letter
 from reportlab.lib.utils import ImageReader
 from PIL import Image
 
+# Page config
 st.set_page_config(
     page_title="Carbon Emission Tracker",
     page_icon="🌍",
@@ -30,9 +31,7 @@ st.sidebar.title("Carbon Emission Tracker")
 st.sidebar.markdown("Powering People for a Better Tomorrow — sustainable, reliable, affordable energy.")
 st.sidebar.markdown("---")
 
-# ------------------------
-# Session state for dataset
-# ------------------------
+# Persist dataset in session_state
 if 'df' not in st.session_state:
     st.session_state.df = None
     st.session_state.message = None
@@ -60,23 +59,18 @@ if message:
     st.warning(message)
 
 # ------------------------
-# Ensure necessary columns
-# ------------------------
-if 'generation_gwh' not in df.columns:
-    st.error("Uploaded file must contain 'generation_gwh' column.")
-    st.stop()
-
-if 'co2_tonnes' not in df.columns:
-    df['co2_tonnes'] = 0  # fill missing CO₂ data with zeros
-
-# Normalize source names
-df['source'] = df['source'].str.title()
-
-# ------------------------
-# Preview data
+# Data preview & normalization
 # ------------------------
 st.subheader("Preview of cleaned data (first 20 rows)")
 st.dataframe(df.head(20))
+
+df['source'] = df['source'].str.title()
+
+# Fill missing CO2 or generation columns with 0
+if 'generation_gwh' not in df.columns:
+    df['generation_gwh'] = 0
+if 'co2_tonnes' not in df.columns:
+    df['co2_tonnes'] = 0
 
 # ------------------------
 # Aggregations
@@ -89,24 +83,24 @@ annual = df.groupby("year", as_index=False).agg(
 ).sort_values("year")
 
 # ------------------------
-# Chart colors
+# Charts with different colors
 # ------------------------
-source_colors = {
+colors = {
     "Hydro": "#1f77b4",
     "Solar": "#ff7f0e",
     "Wind": "#2ca02c",
     "Geothermal": "#d62728",
-    "Thermal": "#9467bd"
+    "Thermal": "#9467bd",
 }
 
-# ------------------------
-# Charts
-# ------------------------
+def get_color(source):
+    return colors.get(source, "#8c564b")  # default color
+
 st.subheader("📊 Energy Generation by Source (Total)")
 chart_gen_source = alt.Chart(gen_by_source).mark_bar().encode(
     x=alt.X("source:N", sort='-y', title="Energy Source"),
     y=alt.Y("generation_gwh:Q", title="Total Generation (GWh)"),
-    color=alt.Color("source:N", scale=alt.Scale(domain=list(source_colors.keys()), range=list(source_colors.values()))),
+    color=alt.Color("source:N", scale=alt.Scale(domain=list(colors.keys()), range=list(colors.values())), legend=None),
     tooltip=[alt.Tooltip("source:N"), alt.Tooltip("generation_gwh:Q", format=",.2f")]
 ).properties(height=400, width=700)
 st.altair_chart(chart_gen_source)
@@ -115,7 +109,7 @@ st.subheader("🌫️ CO₂ Emissions by Source (Total)")
 chart_em_source = alt.Chart(em_by_source).mark_bar().encode(
     x=alt.X("source:N", sort='-y', title="Energy Source"),
     y=alt.Y("co2_tonnes:Q", title="Total CO₂ Emissions (tonnes)"),
-    color=alt.Color("source:N", scale=alt.Scale(domain=list(source_colors.keys()), range=list(source_colors.values()))),
+    color=alt.Color("source:N", scale=alt.Scale(domain=list(colors.keys()), range=list(colors.values())), legend=None),
     tooltip=[alt.Tooltip("source:N"), alt.Tooltip("co2_tonnes:Q", format=",.0f")]
 ).properties(height=400, width=700)
 st.altair_chart(chart_em_source)
@@ -184,12 +178,10 @@ if len(annual) >= 2:
 # ------------------------
 insights_list = [
     f"Carbon saved this year is equivalent to planting {equiv['trees']} trees.",
-    f"Emissions reduction is equivalent to taking {equiv['cars']} cars off the road." if total_emissions>0 else "",
-    f"Sustainable energy has powered {equiv['homes']} homes." if equiv['homes']>0 else "",
+    f"Emissions reduction is equivalent to taking {equiv['cars']} cars off the road.",
+    f"Sustainable energy has powered {equiv['homes']} homes.",
     "Using renewable energy reduces emissions, improves air quality, and supports Kenya’s sustainable energy vision."
 ]
-insights_list = [i for i in insights_list if i]  # remove empty entries
-
 st.subheader("💡 Insights")
 for i, insight in enumerate(insights_list, 1):
     st.markdown(f"{i}. {insight}")
@@ -250,11 +242,10 @@ metrics_dict = {
 }
 
 if st.button("📄 Generate & Download PDF Report"):
-    pdf_buffer = generate_pdf(metrics_dict, insights_list, [chart_gen_source, chart_em_source])
+    pdf_buffer = generate_pdf(metrics_dict, insights_list, [chart_gen_source, chart_em_source, chart_forecast] if 'chart_forecast' in locals() else [chart_gen_source, chart_em_source])
     st.download_button(
         label="📥 Download PDF",
         data=pdf_buffer,
         file_name="carbon_emission_report.pdf",
         mime="application/pdf"
     )
-
