@@ -30,7 +30,9 @@ st.sidebar.title("Carbon Emission Tracker")
 st.sidebar.markdown("Powering People for a Better Tomorrow — sustainable, reliable, affordable energy.")
 st.sidebar.markdown("---")
 
-# Persist dataset in session_state
+# ------------------------
+# Session state for dataset
+# ------------------------
 if 'df' not in st.session_state:
     st.session_state.df = None
     st.session_state.message = None
@@ -58,35 +60,43 @@ if message:
     st.warning(message)
 
 # ------------------------
-# Data preview & normalization
+# Ensure necessary columns
+# ------------------------
+if 'generation_gwh' not in df.columns:
+    st.error("Uploaded file must contain 'generation_gwh' column.")
+    st.stop()
+
+if 'co2_tonnes' not in df.columns:
+    df['co2_tonnes'] = 0  # fill missing CO₂ data with zeros
+
+# Normalize source names
+df['source'] = df['source'].str.title()
+
+# ------------------------
+# Preview data
 # ------------------------
 st.subheader("Preview of cleaned data (first 20 rows)")
 st.dataframe(df.head(20))
-
-df['source'] = df['source'].str.title()
 
 # ------------------------
 # Aggregations
 # ------------------------
 gen_by_source = df.groupby("source", as_index=False)["generation_gwh"].sum().sort_values(by="generation_gwh", ascending=False)
-if 'co2_tonnes' in df.columns:
-    em_by_source = df.groupby("source", as_index=False)["co2_tonnes"].sum().sort_values(by="co2_tonnes", ascending=False)
-else:
-    em_by_source = pd.DataFrame({"source": gen_by_source["source"], "co2_tonnes": [0]*len(gen_by_source)})
-
+em_by_source = df.groupby("source", as_index=False)["co2_tonnes"].sum().sort_values(by="co2_tonnes", ascending=False)
 annual = df.groupby("year", as_index=False).agg(
     total_generation_gwh=pd.NamedAgg(column="generation_gwh", aggfunc="sum"),
-    total_emissions_tonnes=pd.NamedAgg(column="co2_tonnes", aggfunc="sum") if 'co2_tonnes' in df.columns else pd.NamedAgg(column="generation_gwh", aggfunc=lambda x: 0)
+    total_emissions_tonnes=pd.NamedAgg(column="co2_tonnes", aggfunc="sum")
 ).sort_values("year")
 
 # ------------------------
-# Define colors
+# Chart colors
 # ------------------------
 source_colors = {
     "Hydro": "#1f77b4",
-    "Wind": "#ff7f0e",
-    "Solar": "#2ca02c",
-    "Geothermal": "#d62728"
+    "Solar": "#ff7f0e",
+    "Wind": "#2ca02c",
+    "Geothermal": "#d62728",
+    "Thermal": "#9467bd"
 }
 
 # ------------------------
@@ -96,7 +106,7 @@ st.subheader("📊 Energy Generation by Source (Total)")
 chart_gen_source = alt.Chart(gen_by_source).mark_bar().encode(
     x=alt.X("source:N", sort='-y', title="Energy Source"),
     y=alt.Y("generation_gwh:Q", title="Total Generation (GWh)"),
-    color=alt.Color("source:N", scale=alt.Scale(domain=list(source_colors.keys()), range=list(source_colors.values())), legend=alt.Legend(title="Energy Source")),
+    color=alt.Color("source:N", scale=alt.Scale(domain=list(source_colors.keys()), range=list(source_colors.values()))),
     tooltip=[alt.Tooltip("source:N"), alt.Tooltip("generation_gwh:Q", format=",.2f")]
 ).properties(height=400, width=700)
 st.altair_chart(chart_gen_source)
@@ -105,7 +115,7 @@ st.subheader("🌫️ CO₂ Emissions by Source (Total)")
 chart_em_source = alt.Chart(em_by_source).mark_bar().encode(
     x=alt.X("source:N", sort='-y', title="Energy Source"),
     y=alt.Y("co2_tonnes:Q", title="Total CO₂ Emissions (tonnes)"),
-    color=alt.Color("source:N", scale=alt.Scale(domain=list(source_colors.keys()), range=list(source_colors.values())), legend=alt.Legend(title="Energy Source")),
+    color=alt.Color("source:N", scale=alt.Scale(domain=list(source_colors.keys()), range=list(source_colors.values()))),
     tooltip=[alt.Tooltip("source:N"), alt.Tooltip("co2_tonnes:Q", format=",.0f")]
 ).properties(height=400, width=700)
 st.altair_chart(chart_em_source)
@@ -174,10 +184,12 @@ if len(annual) >= 2:
 # ------------------------
 insights_list = [
     f"Carbon saved this year is equivalent to planting {equiv['trees']} trees.",
-    f"Emissions reduction is equivalent to taking {equiv['cars']} cars off the road.",
-    f"Sustainable energy has powered {equiv['homes']} homes.",
-    "Using renewable energy reduces emissions, improves air quality, and supports Kenya’s sustainable energy vision"
+    f"Emissions reduction is equivalent to taking {equiv['cars']} cars off the road." if total_emissions>0 else "",
+    f"Sustainable energy has powered {equiv['homes']} homes." if equiv['homes']>0 else "",
+    "Using renewable energy reduces emissions, improves air quality, and supports Kenya’s sustainable energy vision."
 ]
+insights_list = [i for i in insights_list if i]  # remove empty entries
+
 st.subheader("💡 Insights")
 for i, insight in enumerate(insights_list, 1):
     st.markdown(f"{i}. {insight}")
@@ -245,3 +257,4 @@ if st.button("📄 Generate & Download PDF Report"):
         file_name="carbon_emission_report.pdf",
         mime="application/pdf"
     )
+
