@@ -1,75 +1,50 @@
-# carbon_loader.py
 import pandas as pd
 
-# Default emission factors in gCO2/kWh
-EMISSION_DEFAULTS = {
-    "thermal": 800,   # generic fossil
-    "diesel": 730,
-    "coal": 1000,
-    "oil": 850,
-    "gas": 490,
-    "hydro": 24,
-    "geothermal": 45,
-    "solar": 50,
-    "wind": 12,
-    "nuclear": 15,
-}
-
-def load_energy_data(file):
-    """
-    Reads a CSV/Excel and returns a cleaned dataframe with:
-    - year (int)
-    - source (str)
-    - generation_gwh (float)
-    - emission_factor_gco2_per_kwh (float)
-    - co2_tonnes (float)
-    """
-
+def load_energy_data(uploaded_file):
     try:
-        if isinstance(file, str):
-            if file.endswith(".csv"):
-                df = pd.read_csv(file)
-            elif file.endswith(".xlsx"):
-                df = pd.read_excel(file)
-            else:
-                return None, "Unsupported file type."
+        # Read CSV or Excel
+        if uploaded_file.name.endswith(".csv"):
+            df = pd.read_csv(uploaded_file)
         else:
-            try:
-                df = pd.read_csv(file)
-            except Exception:
-                file.seek(0)
-                df = pd.read_excel(file)
+            df = pd.read_excel(uploaded_file)
 
-        df.columns = [c.strip().lower() for c in df.columns]
+        # Normalize column names
+        df.columns = df.columns.str.strip().str.title()
 
-        required = {"year", "source", "generation_gwh"}
-        if not required.issubset(df.columns):
-            return None, f"Missing required columns: {required - set(df.columns)}"
+        # Ensure required columns exist, add if missing
+        required_cols = ["Month", "Plant", "Geothermal", "Hydro", "Solar", "Wind"]
+        for col in required_cols:
+            if col not in df.columns:
+                df[col] = 0
 
-        # ensure correct dtypes
-        df["year"] = df["year"].astype(int)
-        df["source"] = df["source"].astype(str).str.strip()
-        df["generation_gwh"] = pd.to_numeric(df["generation_gwh"], errors="coerce").fillna(0)
+        # Convert to long format
+        df = df.melt(
+            id_vars=["Month", "Plant"],
+            value_vars=["Geothermal", "Hydro", "Solar", "Wind"],
+            var_name="source",
+            value_name="generation_gwh"
+        )
 
-        # add emission factor if missing
-        if "emission_factor_gco2_per_kwh" not in df.columns:
-            df["emission_factor_gco2_per_kwh"] = df["source"].str.lower().map(EMISSION_DEFAULTS).fillna(0)
+        # Handle missing / invalid dates
+        df["Month"] = pd.to_datetime(df["Month"], errors="coerce")
+        df = df.dropna(subset=["Month"])
+        df["year"] = df["Month"].dt.year
 
-        # compute emissions
-        df["co2_tonnes"] = df["generation_gwh"] * 1e6 * df["emission_factor_gco2_per_kwh"] / 1e9
-        # Explanation: 1 GWh = 1e6 kWh, multiply by gCO2/kWh, then /1e6 for tonnes (g→tonnes = 1e-6)
+        # Dummy emission factors (tonnes per GWh)
+        emission_factors = {"Geothermal": 45, "Hydro": 5, "Solar": 3, "Wind": 2}
+        df["co2_tonnes"] = df.apply(
+            lambda x: x["generation_gwh"] * emission_factors.get(x["source"], 0), axis=1
+        )
 
         return df, None
+
     except Exception as e:
         return None, f"Error loading file: {e}"
 
-def human_equivalents(emissions_tonnes: float):
-    """
-    Convert emissions (tonnes of CO2) into equivalent trees, cars, homes.
-    Sources: EPA & academic averages.
-    """
-    trees = int(emissions_tonnes / 0.021)   # 1 tree absorbs ~21 kg CO2/year
-    cars = int(emissions_tonnes / 4.6)      # 1 car ~4.6 t CO2/year
-    homes = int(emissions_tonnes / 7.5)     # 1 home ~7.5 t CO2/year
 
+def human_equivalents(emissions_tonnes):
+    """Convert emissions saved into human-understandable equivalents."""
+    trees = int(emissions_tonnes * 0.68)    # ~0.68 trees offset per tonne CO2/year
+    cars = int(emissions_tonnes / 4.6)      # Avg car ~4.6 tonnes/year
+    homes = int(emissions_tonnes / 10)      # Rough estimate: 10 tonnes/home/year
     return {"trees": trees, "cars": cars, "homes": homes}
