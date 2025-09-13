@@ -73,7 +73,7 @@ if uploaded_file:
     st.session_state.message = message
 else:
     if st.sidebar.button("Load demo sample data"):
-        df, message = load_energy_data("sample_data/sample_energy_data.csv")
+        df, message = load_energy_data("sample data_3years.csv")
         st.session_state.df = df
         st.session_state.message = message
 
