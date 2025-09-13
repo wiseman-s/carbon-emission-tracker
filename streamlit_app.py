@@ -31,101 +31,69 @@ st.sidebar.title("Carbon Emission Tracker")
 st.sidebar.markdown("Powering People for a Better Tomorrow — sustainable, reliable, affordable energy.")
 st.sidebar.markdown("---")
 
-# ------------------------
-# Dataset guidelines and sample
-# ------------------------
 st.sidebar.markdown("### Dataset Guidelines")
 st.sidebar.markdown("""
-- **Required columns**: `year`, `source`, `generation_gwh`, `co2_tonnes`
+- Required columns: `year`, `source`, `generation_gwh`, `co2_tonnes`
 - `year` should be numeric (e.g., 2023)
 - `source` should be one of: Hydro, Solar, Wind, Geothermal, Thermal
 - `generation_gwh` and `co2_tonnes` must be numeric
 """)
 
-st.sidebar.markdown("#### Sample Dataset")
-sample_df = pd.DataFrame({
-    "year": [2023, 2023, 2023],
-    "source": ["Hydro", "Solar", "Wind"],
-    "generation_gwh": [500, 200, 150],
-    "co2_tonnes": [0, 50, 30]
-})
-st.sidebar.dataframe(sample_df)
-
 # ------------------------
-# Persist dataset in session_state
+# Safe loader for uploaded file or demo data
 # ------------------------
-if 'df' not in st.session_state:
-    st.session_state.df = None
-    st.session_state.message = None
-
-# ------------------------
-# Safe data loader
-# ------------------------
-def load_energy_data_safe(uploaded_file):
-    if uploaded_file.name.endswith(".csv"):
-        df = pd.read_csv(uploaded_file)
-    else:
-        df = pd.read_excel(uploaded_file)
-    
-    required_cols = ["year", "source", "generation_gwh", "co2_tonnes"]
-    missing_cols = [col for col in required_cols if col not in df.columns]
-    message = None
-    
-    if missing_cols:
-        message = f"Warning: Missing columns: {', '.join(missing_cols)}. These will be filled with defaults."
-        for col in missing_cols:
-            if col == "source":
-                df[col] = "Unknown"
+def load_energy_data_safe(uploaded_file=None):
+    try:
+        if uploaded_file is not None:
+            if uploaded_file.name.endswith(".csv"):
+                df = pd.read_csv(uploaded_file)
             else:
-                df[col] = 0
+                df = pd.read_excel(uploaded_file)
+        else:
+            # Fallback demo dataset
+            df = pd.DataFrame({
+                "year": [2023, 2023, 2023],
+                "source": ["Hydro", "Solar", "Wind"],
+                "generation_gwh": [500, 200, 150],
+                "co2_tonnes": [0, 50, 30]
+            })
 
-    # Clean 'source' column
-    df['source'] = df['source'].astype(str).str.title()
+        # Ensure required columns
+        required_cols = ["year", "source", "generation_gwh", "co2_tonnes"]
+        for col in required_cols:
+            if col not in df.columns:
+                df[col] = 0 if col != "source" else "Unknown"
 
-    # Remove commas/spaces in numeric columns and force numeric type
-    for col in ["year", "generation_gwh", "co2_tonnes"]:
-        df[col] = df[col].astype(str).str.replace(",", "").str.strip()
-        df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
+        # Clean columns
+        df['source'] = df['source'].astype(str).str.title()
+        for col in ["year", "generation_gwh", "co2_tonnes"]:
+            df[col] = pd.to_numeric(df[col].astype(str).str.replace(",", "").str.strip(), errors='coerce').fillna(0)
 
-    # Drop rows with invalid year or source
-    df = df[df['year'] > 0]
-    df = df[df['source'].notna()]
+        # Drop invalid rows
+        df = df[df['year'] > 0]
+        df = df[df['source'].notna()]
+        df = df.reset_index(drop=True)
 
-    # Reset index for Altair
-    df = df.reset_index(drop=True)
-
-    if df.empty:
-        message = "Uploaded dataset is empty or invalid after cleaning."
-
-    return df, message
+        if df.empty:
+            return None, "Dataset is empty after cleaning."
+        return df, None
+    except Exception as e:
+        return None, f"Error loading dataset: {e}"
 
 # ------------------------
-# Upload or load demo data
+# Upload file or load demo
 # ------------------------
 uploaded_file = st.sidebar.file_uploader("Upload Energy Data (CSV or Excel)", type=["csv", "xlsx"])
+df, message = load_energy_data_safe(uploaded_file)
 
-if uploaded_file:
-    df, message = load_energy_data_safe(uploaded_file)
-    st.session_state.df = df
-    st.session_state.message = message
-else:
-    if st.sidebar.button("Load demo sample data"):
-        df, message = load_energy_data_safe("sample_data/sample_energy_data.csv")
-        st.session_state.df = df
-        st.session_state.message = message
-
-df = st.session_state.df
-message = st.session_state.message
-
-if df is None or df.empty:
-    st.warning("No valid dataset loaded. Upload a CSV/Excel or click 'Load demo sample data'.")
+if df is None:
+    st.warning(message or "No valid dataset.")
     st.stop()
-
 if message:
     st.warning(message)
 
 # ------------------------
-# Data preview
+# Preview
 # ------------------------
 st.subheader("Preview of cleaned data (first 20 rows)")
 st.dataframe(df.head(20))
@@ -161,8 +129,6 @@ if not gen_by_source.empty:
         tooltip=[alt.Tooltip("source:N"), alt.Tooltip("generation_gwh:Q", format=",.2f")]
     ).properties(height=400, width=700)
     st.altair_chart(chart_gen_source)
-else:
-    st.info("No generation data to display.")
 
 st.subheader("🌫️ CO₂ Emissions by Source (Total)")
 if not em_by_source.empty:
@@ -173,8 +139,6 @@ if not em_by_source.empty:
         tooltip=[alt.Tooltip("source:N"), alt.Tooltip("co2_tonnes:Q", format=",.0f")]
     ).properties(height=400, width=700)
     st.altair_chart(chart_em_source)
-else:
-    st.info("No emissions data to display.")
 
 st.subheader("📈 Annual Trends")
 if not annual.empty:
@@ -191,8 +155,6 @@ if not annual.empty:
     col1, col2 = st.columns(2)
     col1.altair_chart(chart_gen_annual)
     col2.altair_chart(chart_em_annual)
-else:
-    st.info("No annual data to display.")
 
 # ------------------------
 # Key metrics
@@ -207,4 +169,3 @@ c1.metric("⚡ Total Generation (GWh)", f"{total_gen:,.0f}")
 c2.metric("🌫️ Total CO₂ (tonnes)", f"{total_emissions:,.0f}")
 c3.metric("🌳 Tree Equivalent", f"{equiv['trees']:,} trees")
 st.markdown(f"Other equivalents: {equiv['cars']:,} cars off the road per year • {equiv['homes']:,} homes powered per year")
-
