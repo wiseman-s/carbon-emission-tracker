@@ -9,7 +9,13 @@ from reportlab.pdfgen import canvas
 from reportlab.lib.pagesizes import letter
 from PIL import Image
 from reportlab.lib.utils import ImageReader
-from altair_saver import save as alt_save
+
+# Safe import for altair_saver
+try:
+    from altair_saver import save as alt_save
+    ALT_SAVER_AVAILABLE = True
+except ModuleNotFoundError:
+    ALT_SAVER_AVAILABLE = False
 
 # ------------------------
 # Page config
@@ -185,7 +191,7 @@ chart_avoided_annual = alt.Chart(annual).mark_line(point=True, color="#6A5ACD").
     x="year:Q", y="total_avoided_co2:Q",
     tooltip=[alt.Tooltip("year:Q"), alt.Tooltip("total_avoided_co2:Q", format=",.0f")]
 ).properties(height=300, width=600)
-col1, col2, col3 = st.columns(3)
+col1,col2,col3 = st.columns(3)
 col1.altair_chart(chart_gen_annual)
 col2.altair_chart(chart_em_annual)
 col3.altair_chart(chart_avoided_annual)
@@ -193,11 +199,10 @@ col3.altair_chart(chart_avoided_annual)
 # ------------------------
 # Key metrics
 # ------------------------
-st.subheader("📌 Key Metrics")
-total_gen = gen_by_source['generation_gwh'].sum()
-total_emissions = em_by_source['co2_tonnes'].sum()
-total_avoided = avoided_by_source['avoided_co2'].sum()
-c1, c2, c3 = st.columns(3)
+total_gen = annual['total_generation_gwh'].sum()
+total_emissions = annual['total_emissions_tonnes'].sum()
+total_avoided = annual['total_avoided_co2'].sum()
+c1,c2,c3 = st.columns(3)
 c1.metric("⚡ Total Generation (GWh)", f"{total_gen:,.0f}")
 c2.metric("🌫️ Total CO₂ Emissions (tonnes)", f"{total_emissions:,.0f}")
 c3.metric("🌱 Total CO₂ Avoided (tonnes)", f"{total_avoided:,.0f}")
@@ -206,8 +211,8 @@ c3.metric("🌱 Total CO₂ Avoided (tonnes)", f"{total_avoided:,.0f}")
 # Quick forecast
 # ------------------------
 st.subheader("🔮 Quick Forecast (experimental)")
-forecast_target = st.selectbox("Forecast target", options=["Total Generation (GWh)", "Total CO₂ (tonnes)","Total CO₂ Avoided (tonnes)"])
-n_years = st.slider("Forecast years ahead", 1, 10, 3)
+forecast_target = st.selectbox("Forecast target", options=["Total Generation (GWh)","Total CO₂ (tonnes)","Total CO₂ Avoided (tonnes)"])
+n_years = st.slider("Forecast years ahead",1,10,3)
 
 if len(annual) >= 2:
     if forecast_target=="Total Generation (GWh)":
@@ -232,9 +237,9 @@ if len(annual) >= 2:
 # ------------------------
 # Kenya-focused insights
 # ------------------------
-trees = int(total_avoided/22)  # 22 tonnes/year per tree approx
-cars = int(total_avoided/4.6)  # 4.6 tonnes CO2/year per car approx
-homes = int(total_avoided/7.5) # 7.5 tonnes CO2/year per home approx
+trees = int(total_avoided/22)  # approx CO2 avoided per tree
+cars = int(total_avoided/4.6)  # approx CO2 per car per year
+homes = int(total_avoided/7.5) # approx CO2 per home per year
 insights_list=[
     f"In Kenya, carbon saved this year is equivalent to planting {trees} trees.",
     f"This reduction is like taking {cars} cars off Kenyan roads.",
@@ -242,31 +247,26 @@ insights_list=[
     "Renewable energy adoption in Kenya improves air quality and supports national energy goals."
 ]
 st.subheader("💡 Insights")
-for i,insight in enumerate(insights_list,1):
-    st.markdown(f"{i}. {insight}")
+for i,insight in enumerate(insights_list,1): st.markdown(f"{i}. {insight}")
 
 # ------------------------
 # PDF Generation
 # ------------------------
 def generate_pdf(metrics_dict, insights_list, charts):
     buffer = BytesIO()
-    c = canvas.Canvas(buffer, pagesize=letter)
-    width, height = letter
+    c = canvas.Canvas(buffer,pagesize=letter)
+    width,height = letter
     c.setFont("Helvetica-Bold",20); c.drawString(50,height-50,"Kenya Carbon Emission Tracker Report")
     y_pos = height-100
 
-    # Metrics
     c.setFont("Helvetica",12)
     for k,v in metrics_dict.items(): c.drawString(50,y_pos,f"{k}: {v}"); y_pos-=20
     y_pos-=10
-
-    # Insights
     c.setFont("Helvetica-Bold",14); c.drawString(50,y_pos,"Insights:"); y_pos-=20
     c.setFont("Helvetica",12)
     for insight in insights_list: c.drawString(60,y_pos,f"- {insight}"); y_pos-=20
     y_pos-=10
 
-    # Charts
     for chart in charts:
         img_buf = save_chart_image(chart)
         if img_buf is None: continue
@@ -279,15 +279,10 @@ def generate_pdf(metrics_dict, insights_list, charts):
     c.save(); buffer.seek(0)
     return buffer
 
-def save_chart_image(chart):
-    buf = BytesIO()
-    try: alt_save(chart, fp=buf, fmt="png", scale_factor=2); buf.seek(0); return buf
-    except Exception as e: st.error(f"Chart PNG generation failed: {e}"); return None
-
 metrics_dict = {
-    "Total Generation (GWh)":f"{total_gen:,.0f}",
-    "Total CO₂ Emissions (tonnes)":f"{total_emissions:,.0f}",
-    "Total CO₂ Avoided (tonnes)":f"{total_avoided:,.0f}"
+    "Total Generation (GWh)": f"{total_gen:,.0f}",
+    "Total CO₂ Emissions (tonnes)": f"{total_emissions:,.0f}",
+    "Total CO₂ Avoided (tonnes)": f"{total_avoided:,.0f}"
 }
 
 charts_to_save = [chart_gen_source, chart_em_source, chart_avoided_source]
