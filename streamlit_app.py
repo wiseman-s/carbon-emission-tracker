@@ -96,30 +96,18 @@ if 'plant' in df.columns:
     df['plant'] = df['plant'].str.title()
 
 # ------------------------
-# Plant selection for plant-level reporting
-# ------------------------
-if 'plant' in df.columns:
-    plants = df['plant'].unique().tolist()
-    selected_plant = st.sidebar.selectbox("Select Your Plant", options=plants)
-    plant_df = df[df['plant'] == selected_plant]
-    st.subheader(f"🏭 Plant: {selected_plant}")
-else:
-    plant_df = df.copy()  # fallback if no plant column
-    selected_plant = "All Plants"  # fallback to prevent NameError
-
-# ------------------------
 # Aggregations
 # ------------------------
-# By source (current)
-gen_by_source = plant_df.groupby("source", as_index=False)["generation_gwh"].sum().sort_values(by="generation_gwh", ascending=False)
-em_by_source = plant_df.groupby("source", as_index=False)["co2_tonnes"].sum().sort_values(by="co2_tonnes", ascending=False)
+# By source
+gen_by_source = df.groupby("source", as_index=False)["generation_gwh"].sum().sort_values(by="generation_gwh", ascending=False)
+em_by_source = df.groupby("source", as_index=False)["co2_tonnes"].sum().sort_values(by="co2_tonnes", ascending=False)
 
-# By plant (all plants)
+# By plant
 if 'plant' in df.columns:
     gen_by_plant = df.groupby("plant", as_index=False)["generation_gwh"].sum().sort_values(by="generation_gwh", ascending=False)
     em_by_plant = df.groupby("plant", as_index=False)["co2_tonnes"].sum().sort_values(by="co2_tonnes", ascending=False)
 
-annual = plant_df.groupby("year", as_index=False).agg(
+annual = df.groupby("year", as_index=False).agg(
     total_generation_gwh=pd.NamedAgg(column="generation_gwh", aggfunc="sum"),
     total_emissions_tonnes=pd.NamedAgg(column="co2_tonnes", aggfunc="sum")
 ).sort_values("year")
@@ -147,7 +135,7 @@ chart_em_source = alt.Chart(em_by_source).mark_bar().encode(
 st.altair_chart(chart_em_source)
 
 # ------------------------
-# Charts by plant (optional)
+# Charts by plant
 # ------------------------
 if 'plant' in df.columns:
     st.subheader("🏭 Energy Generation by Plant")
@@ -185,30 +173,17 @@ col1.altair_chart(chart_gen_annual)
 col2.altair_chart(chart_em_annual)
 
 # ------------------------
-# Summary metrics & equivalents (Plant-safe)
+# Summary metrics & equivalents
 # ------------------------
 st.subheader("📌 Key Metrics")
 total_gen = gen_by_source['generation_gwh'].sum()
-
-# Plant-level emissions
-if 'co2_tonnes' in plant_df.columns:
-    total_emissions = plant_df['co2_tonnes'].sum()
-else:
-    total_emissions = 0
-equiv_plant = human_equivalents(total_emissions)
-
-# Total emissions across all plants
-if 'co2_tonnes' in df.columns:
-    total_emissions_all = df['co2_tonnes'].sum()
-else:
-    total_emissions_all = 0
-equiv_total = human_equivalents(total_emissions_all)
-
+total_emissions = em_by_source['co2_tonnes'].sum() if 'co2_tonnes' in df.columns else 0
+equiv = human_equivalents(total_emissions)
 c1, c2, c3 = st.columns(3)
 c1.metric("⚡ Total Generation (GWh)", f"{total_gen:,.0f}")
 c2.metric("🌫️ Total CO₂ (tonnes)", f"{total_emissions:,.0f}")
-c3.metric("🌳 Tree Equivalent", f"{equiv_plant['trees']:,} trees")
-st.markdown(f"Other equivalents: {equiv_plant['cars']:,} cars off the road per year • {equiv_plant['homes']:,} homes powered per year")
+c3.metric("🌳 Tree Equivalent", f"{equiv['trees']:,} trees")
+st.markdown(f"Other equivalents: {equiv['cars']:,} cars off the road per year • {equiv['homes']:,} homes powered per year")
 
 # ------------------------
 # Quick Forecast
@@ -243,17 +218,42 @@ if len(annual) >= 2:
     st.altair_chart(chart_forecast)
 
 # ------------------------
-# Insights (Plant + Total)
+# Approximate Insights (Plant-level & Total)
 # ------------------------
-insights_list = [
-    f"Carbon saved by {selected_plant} this year is equivalent to planting {equiv_plant['trees']} trees.",
-    f"Emissions reduction by {selected_plant} is equivalent to taking {equiv_plant['cars']} cars off the road.",
-    f"Sustainable energy from {selected_plant} has powered {equiv_plant['homes']} homes.",
-    f"Total carbon saved across all plants is equivalent to planting {equiv_total['trees']} trees.",
-    f"Total emissions reduction across all plants is equivalent to taking {equiv_total['cars']} cars off the road.",
-    f"Total sustainable energy across all plants has powered {equiv_total['homes']} homes.",
+def approx_number(x):
+    """Round numbers to nearest hundred or nearest ten if small"""
+    if x >= 1000:
+        return f"{int(round(x, -2)):,}"  # nearest hundred
+    elif x >= 100:
+        return f"{int(round(x, -1)):,}"  # nearest ten
+    else:
+        return str(int(x))
+
+insights_list = []
+
+# Plant-level insights if plant exists
+if 'plant' in df.columns:
+    selected_plant = st.selectbox("Select Plant for Detailed Insights", options=sorted(df['plant'].unique()))
+    st.session_state.selected_plant = selected_plant
+
+    plant_df = df[df['plant'] == selected_plant]
+    total_em_plant = plant_df['co2_tonnes'].sum() if 'co2_tonnes' in df.columns else 0
+    equiv_plant = human_equivalents(total_em_plant)
+
+    insights_list.extend([
+        f"Approx. {approx_number(equiv_plant['trees'])} trees were saved by {selected_plant} this year.",
+        f"Approx. {approx_number(equiv_plant['cars'])} cars were taken off the road due to emissions reduction at {selected_plant}.",
+        f"Approx. {approx_number(equiv_plant['homes'])} homes powered by sustainable energy from {selected_plant}."
+    ])
+
+# Total metrics across all plants
+insights_list.extend([
+    f"Total across all plants: approx. {approx_number(equiv['trees'])} trees saved, "
+    f"{approx_number(equiv['cars'])} cars off the road, and {approx_number(equiv['homes'])} homes powered.",
     "Using renewable energy reduces emissions, improves air quality, and supports Kenya’s sustainable energy vision."
-]
+])
+
+# Display insights
 st.subheader("💡 Insights")
 for i, insight in enumerate(insights_list, 1):
     st.markdown(f"{i}. {insight}")
@@ -313,7 +313,7 @@ def generate_pdf(metrics_dict, insights_list, charts):
 metrics_dict = {
     "Total Generation (GWh)": f"{total_gen:,.0f}",
     "Total CO₂ (tonnes)": f"{total_emissions:,.0f}",
-    "Tree Equivalent": f"{equiv_plant['trees']:,} trees"
+    "Tree Equivalent": f"{equiv['trees']:,} trees"
 }
 
 if st.button("📄 Generate & Download PDF Report"):
@@ -326,7 +326,7 @@ if st.button("📄 Generate & Download PDF Report"):
     st.download_button(
         label="📥 Download PDF",
         data=pdf_buffer,
-        file_name=f"{selected_plant}_carbon_emission_report.pdf",
+        file_name="carbon_emission_report.pdf",
         mime="application/pdf"
     )
 
