@@ -105,7 +105,6 @@ if 'plant' in df.columns:
     st.subheader(f"🏭 Plant: {selected_plant}")
 else:
     plant_df = df.copy()  # fallback if no plant column
-    selected_plant = "All Plants"  # <--- fallback to prevent NameError
 
 # ------------------------
 # Aggregations
@@ -200,7 +199,8 @@ c1, c2, c3 = st.columns(3)
 c1.metric("⚡ Total Generation (GWh)", f"{total_gen:,.0f}")
 c2.metric("🌫️ Total CO₂ (tonnes)", f"{total_emissions:,.0f}")
 c3.metric("🌳 Tree Equivalent", f"{equiv_plant['trees']:,} trees")
-st.markdown(f"Other equivalents: {equiv_plant['cars']:,} cars off the road per year • {equiv_plant['homes']:,} homes powered per year")
+st.markdown(f"Other equivalents for this plant: {equiv_plant['cars']:,} cars off the road per year • {equiv_plant['homes']:,} homes powered per year")
+st.markdown(f"Total equivalents across all plants: {equiv_total['cars']:,} cars off the road per year • {equiv_total['homes']:,} homes powered per year")
 
 # ------------------------
 # Quick Forecast
