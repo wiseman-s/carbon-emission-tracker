@@ -79,13 +79,19 @@ def load_energy_data_safe(uploaded_file):
             else:
                 df[col] = 0
 
+    # Clean 'source' column
+    df['source'] = df['source'].astype(str).str.title()
+
     # Ensure numeric columns
     for col in ["year", "generation_gwh", "co2_tonnes"]:
         df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
 
-    # Drop rows with completely missing key info
+    # Drop completely invalid rows
     df = df.dropna(subset=["year", "source"])
-    
+
+    if df.empty:
+        message = "Uploaded dataset is empty or invalid after cleaning."
+
     return df, message
 
 # ------------------------
@@ -106,8 +112,8 @@ else:
 df = st.session_state.df
 message = st.session_state.message
 
-if df is None:
-    st.warning("No dataset loaded. Upload a CSV/Excel or click 'Load demo sample data'.")
+if df is None or df.empty:
+    st.warning("No valid dataset loaded. Upload a CSV/Excel or click 'Load demo sample data'.")
     st.stop()
 
 if message:
@@ -118,14 +124,6 @@ if message:
 # ------------------------
 st.subheader("Preview of cleaned data (first 20 rows)")
 st.dataframe(df.head(20))
-
-df['source'] = df['source'].str.title()
-
-# Fill missing generation or co2 columns
-if 'generation_gwh' not in df.columns:
-    df['generation_gwh'] = 0
-if 'co2_tonnes' not in df.columns:
-    df['co2_tonnes'] = 0
 
 # ------------------------
 # Aggregations
@@ -149,45 +147,55 @@ colors = {
 }
 
 st.subheader("📊 Energy Generation by Source (Total)")
-chart_gen_source = alt.Chart(gen_by_source).mark_bar().encode(
-    x=alt.X("source:N", sort='-y', title="Energy Source"),
-    y=alt.Y("generation_gwh:Q", title="Total Generation (GWh)"),
-    color=alt.Color("source:N", scale=alt.Scale(domain=list(colors.keys()), range=list(colors.values())), legend=None),
-    tooltip=[alt.Tooltip("source:N"), alt.Tooltip("generation_gwh:Q", format=",.2f")]
-).properties(height=400, width=700)
-st.altair_chart(chart_gen_source)
+if not gen_by_source.empty:
+    chart_gen_source = alt.Chart(gen_by_source).mark_bar().encode(
+        x=alt.X("source:N", sort='-y', title="Energy Source"),
+        y=alt.Y("generation_gwh:Q", title="Total Generation (GWh)"),
+        color=alt.Color("source:N", scale=alt.Scale(domain=list(colors.keys()), range=list(colors.values())), legend=None),
+        tooltip=[alt.Tooltip("source:N"), alt.Tooltip("generation_gwh:Q", format=",.2f")]
+    ).properties(height=400, width=700)
+    st.altair_chart(chart_gen_source)
+else:
+    st.info("No generation data to display.")
 
 st.subheader("🌫️ CO₂ Emissions by Source (Total)")
-chart_em_source = alt.Chart(em_by_source).mark_bar().encode(
-    x=alt.X("source:N", sort='-y', title="Energy Source"),
-    y=alt.Y("co2_tonnes:Q", title="Total CO₂ Emissions (tonnes)"),
-    color=alt.Color("source:N", scale=alt.Scale(domain=list(colors.keys()), range=list(colors.values())), legend=None),
-    tooltip=[alt.Tooltip("source:N"), alt.Tooltip("co2_tonnes:Q", format=",.0f")]
-).properties(height=400, width=700)
-st.altair_chart(chart_em_source)
+if not em_by_source.empty:
+    chart_em_source = alt.Chart(em_by_source).mark_bar().encode(
+        x=alt.X("source:N", sort='-y', title="Energy Source"),
+        y=alt.Y("co2_tonnes:Q", title="Total CO₂ Emissions (tonnes)"),
+        color=alt.Color("source:N", scale=alt.Scale(domain=list(colors.keys()), range=list(colors.values())), legend=None),
+        tooltip=[alt.Tooltip("source:N"), alt.Tooltip("co2_tonnes:Q", format=",.0f")]
+    ).properties(height=400, width=700)
+    st.altair_chart(chart_em_source)
+else:
+    st.info("No emissions data to display.")
 
 st.subheader("📈 Annual Trends")
-chart_gen_annual = alt.Chart(annual).mark_line(point=True, color="#2E8B57").encode(
-    x="year:Q",
-    y="total_generation_gwh:Q",
-    tooltip=[alt.Tooltip("year:Q"), alt.Tooltip("total_generation_gwh:Q", format=",.0f")]
-).properties(height=300, width=600)
-chart_em_annual = alt.Chart(annual).mark_line(point=True, color="#FF8C00").encode(
-    x="year:Q",
-    y="total_emissions_tonnes:Q",
-    tooltip=[alt.Tooltip("year:Q"), alt.Tooltip("total_emissions_tonnes:Q", format=",.0f")]
-).properties(height=300, width=600)
-col1, col2 = st.columns(2)
-col1.altair_chart(chart_gen_annual)
-col2.altair_chart(chart_em_annual)
+if not annual.empty:
+    chart_gen_annual = alt.Chart(annual).mark_line(point=True, color="#2E8B57").encode(
+        x="year:Q",
+        y="total_generation_gwh:Q",
+        tooltip=[alt.Tooltip("year:Q"), alt.Tooltip("total_generation_gwh:Q", format=",.0f")]
+    ).properties(height=300, width=600)
+    chart_em_annual = alt.Chart(annual).mark_line(point=True, color="#FF8C00").encode(
+        x="year:Q",
+        y="total_emissions_tonnes:Q",
+        tooltip=[alt.Tooltip("year:Q"), alt.Tooltip("total_emissions_tonnes:Q", format=",.0f")]
+    ).properties(height=300, width=600)
+    col1, col2 = st.columns(2)
+    col1.altair_chart(chart_gen_annual)
+    col2.altair_chart(chart_em_annual)
+else:
+    st.info("No annual data to display.")
 
 # ------------------------
 # Key metrics
 # ------------------------
+total_gen = gen_by_source['generation_gwh'].sum() if not gen_by_source.empty else 0
+total_emissions = em_by_source['co2_tonnes'].sum() if not em_by_source.empty else 0
+equiv = human_equivalents(total_emissions) if total_emissions > 0 else {"trees": 0, "cars": 0, "homes": 0}
+
 st.subheader("📌 Key Metrics")
-total_gen = gen_by_source['generation_gwh'].sum()
-total_emissions = em_by_source['co2_tonnes'].sum()
-equiv = human_equivalents(total_emissions)
 c1, c2, c3 = st.columns(3)
 c1.metric("⚡ Total Generation (GWh)", f"{total_gen:,.0f}")
 c2.metric("🌫️ Total CO₂ (tonnes)", f"{total_emissions:,.0f}")
@@ -201,7 +209,7 @@ st.subheader("🔮 Quick Forecast (experimental)")
 forecast_target = st.selectbox("Forecast target", options=["Total Generation (GWh)", "Total CO₂ (tonnes)"])
 n_years = st.slider("Forecast years ahead", 1, 10, 3)
 
-if len(annual) >= 2:
+if not annual.empty and len(annual) >= 2:
     if forecast_target.startswith("Total Generation"):
         X = annual['year'].values.reshape(-1,1)
         y = annual['total_generation_gwh'].values
@@ -224,6 +232,8 @@ if len(annual) >= 2:
         tooltip=[alt.Tooltip("year:Q"), alt.Tooltip("value:Q", format=",.0f")]
     ).properties(height=350, width=700)
     st.altair_chart(chart_forecast)
+else:
+    st.info("Not enough data for forecast.")
 
 # ------------------------
 # Insights
@@ -239,7 +249,7 @@ for i, insight in enumerate(insights_list, 1):
     st.markdown(f"{i}. {insight}")
 
 # ------------------------
-# PDF generation (cloud-safe)
+# PDF generation
 # ------------------------
 def generate_pdf(metrics_dict, insights_list, df_preview):
     buffer = BytesIO()
