@@ -218,7 +218,7 @@ if len(annual) >= 2:
     st.altair_chart(chart_forecast)
 
 # ------------------------
-# Approximate Insights (Plant-level & Total)
+# Creative Insights (Plant-level & Total)
 # ------------------------
 def approx_number(x):
     """Round numbers to nearest hundred or nearest ten if small"""
@@ -231,7 +231,7 @@ def approx_number(x):
 
 insights_list = []
 
-# Plant-level insights if plant exists
+# Plant-level insights
 if 'plant' in df.columns:
     selected_plant = st.selectbox("Select Plant for Detailed Insights", options=sorted(df['plant'].unique()))
     st.session_state.selected_plant = selected_plant
@@ -240,18 +240,20 @@ if 'plant' in df.columns:
     total_em_plant = plant_df['co2_tonnes'].sum() if 'co2_tonnes' in df.columns else 0
     equiv_plant = human_equivalents(total_em_plant)
 
-    insights_list.extend([
-        f"Approx. {approx_number(equiv_plant['trees'])} trees were saved by {selected_plant} this year.",
-        f"Approx. {approx_number(equiv_plant['cars'])} cars were taken off the road due to emissions reduction at {selected_plant}.",
-        f"Approx. {approx_number(equiv_plant['homes'])} homes powered by sustainable energy from {selected_plant}."
-    ])
+    insights_list.append(
+        f"By using energy from {selected_plant}, we reduced carbon emissions equivalent to planting ~{approx_number(equiv_plant['trees'])} trees, "
+        f"taking ~{approx_number(equiv_plant['cars'])} cars off the road, and powering ~{approx_number(equiv_plant['homes'])} home(s) sustainably."
+    )
 
 # Total metrics across all plants
-insights_list.extend([
-    f"Total across all plants: approx. {approx_number(equiv['trees'])} trees saved, "
-    f"{approx_number(equiv['cars'])} cars off the road, and {approx_number(equiv['homes'])} homes powered.",
+insights_list.append(
+    f"Across all plants, sustainable energy has helped save ~{approx_number(equiv['trees'])} trees, "
+    f"reduced emissions equivalent to taking ~{approx_number(equiv['cars'])} cars off the road, "
+    f"and powered ~{approx_number(equiv['homes'])} home(s)."
+)
+insights_list.append(
     "Using renewable energy reduces emissions, improves air quality, and supports Kenya’s sustainable energy vision."
-])
+)
 
 # Display insights
 st.subheader("💡 Insights")
@@ -337,8 +339,9 @@ st.markdown(
     """
     <hr>
     <p style='text-align:center; font-size:12px; color:gray;'>
-    Created by Simon Wanyoike • Contact: <a href='mailto:symoprof83@gmail.com'>symoprof83@gmail.com</a>
+    System created by Simon Wanyoike • Contact: <a href='mailto:symoprof83@gmail.com'>symoprof83@gmail.com</a>
     </p>
     """,
     unsafe_allow_html=True
 )
+
