@@ -34,6 +34,20 @@ st.sidebar.markdown("Powering People for a Better Tomorrow — sustainable, reli
 st.sidebar.markdown("---")
 
 # ------------------------
+# Upload Guidelines
+# ------------------------
+st.sidebar.info(
+    """
+    **📄 Upload Guidelines**
+    - Only **CSV** or **Excel** files are allowed.
+    - Maximum file size: **10 MB**.
+    - Ensure column names match the required format: `Month, Geothermal, Hydro, Solar, Wind`.
+    - Dates should be in **ISO format** (YYYY-MM-DD).
+    - Avoid empty rows or columns.
+    """
+)
+
+# ------------------------
 # Persist dataset
 # ------------------------
 if 'df' not in st.session_state:
