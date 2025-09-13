@@ -1,31 +1,32 @@
 # streamlit_app.py
 import streamlit as st
 import pandas as pd
-import altair as alt
 import numpy as np
+import altair as alt
 from sklearn.linear_model import LinearRegression
 from io import BytesIO
 from reportlab.pdfgen import canvas
 from reportlab.lib.pagesizes import letter
 from PIL import Image
 from reportlab.lib.utils import ImageReader
+from altair_saver import save as alt_save
 
 # ------------------------
 # Page config
 # ------------------------
-st.set_page_config(page_title="Carbon Emission Tracker", page_icon="🌍", layout="wide")
+st.set_page_config(page_title="Kenya Carbon Emission Tracker", page_icon="🌍", layout="wide")
 
 # ------------------------
 # Heading
 # ------------------------
-st.title("🌍 Carbon Emission Tracker")
-st.markdown("### Visualize, estimate, and explore emission scenarios for energy generation")
+st.title("🌍 Kenya Carbon Emission Tracker")
+st.markdown("### Visualize, estimate, and explore emission scenarios for energy generation in Kenya")
 
 # ------------------------
 # Sidebar
 # ------------------------
-st.sidebar.title("Carbon Emission Tracker")
-st.sidebar.markdown("Powering People for a Better Tomorrow — sustainable, reliable, affordable energy.")
+st.sidebar.title("Kenya Carbon Emission Tracker")
+st.sidebar.markdown("Sustainable, reliable, and affordable energy for Kenya.")
 st.sidebar.markdown("---")
 st.sidebar.markdown("### Dataset Guidelines")
 st.sidebar.markdown("""
@@ -55,7 +56,7 @@ if 'df' not in st.session_state:
 # Default CO2 emission factors (tonnes per GWh)
 # ------------------------
 default_emission_factors = {"Hydro":0,"Solar":0,"Wind":0,"Geothermal":5,"Thermal":900,"Unknown":100}
-baseline_emission_factor = 900  # tonnes/GWh if the energy was from Thermal
+baseline_emission_factor = 900  # tonnes/GWh if energy was from Thermal
 
 # ------------------------
 # Load and clean data
@@ -196,61 +197,49 @@ st.subheader("📌 Key Metrics")
 total_gen = gen_by_source['generation_gwh'].sum()
 total_emissions = em_by_source['co2_tonnes'].sum()
 total_avoided = avoided_by_source['avoided_co2'].sum()
-
-def human_equivalents(total_co2_tonnes):
-    total_kg = total_co2_tonnes*1000
-    trees = int(total_kg / 22)
-    cars = int(total_co2_tonnes / 4.6)
-    homes = int(total_co2_tonnes / 7.5)
-    return {"trees":trees,"cars":cars,"homes":homes}
-
-equiv = human_equivalents(total_avoided)
-c1,c2,c3 = st.columns(3)
+c1, c2, c3 = st.columns(3)
 c1.metric("⚡ Total Generation (GWh)", f"{total_gen:,.0f}")
-c2.metric("🌫️ Total CO₂ (tonnes)", f"{total_emissions:,.0f}")
-c3.metric("🌱 CO₂ Avoided (tonnes)", f"{total_avoided:,.0f}")
+c2.metric("🌫️ Total CO₂ Emissions (tonnes)", f"{total_emissions:,.0f}")
+c3.metric("🌱 Total CO₂ Avoided (tonnes)", f"{total_avoided:,.0f}")
 
 # ------------------------
-# Forecast
+# Quick forecast
 # ------------------------
 st.subheader("🔮 Quick Forecast (experimental)")
-forecast_target = st.selectbox("Forecast target", options=["Total Generation (GWh)","Total CO₂ (tonnes)","CO₂ Avoided (tonnes)"])
-n_years = st.slider("Forecast years ahead",1,10,3)
-if len(annual)>=2:
+forecast_target = st.selectbox("Forecast target", options=["Total Generation (GWh)", "Total CO₂ (tonnes)","Total CO₂ Avoided (tonnes)"])
+n_years = st.slider("Forecast years ahead", 1, 10, 3)
+
+if len(annual) >= 2:
     if forecast_target=="Total Generation (GWh)":
-        X=annual['year'].values.reshape(-1,1)
-        y=annual['total_generation_gwh'].values
-        y_label="Generation (GWh)"
+        X = annual['year'].values.reshape(-1,1); y=annual['total_generation_gwh'].values; y_label="Generation (GWh)"
     elif forecast_target=="Total CO₂ (tonnes)":
-        X=annual['year'].values.reshape(-1,1)
-        y=annual['total_emissions_tonnes'].values
-        y_label="CO₂ (tonnes)"
+        X = annual['year'].values.reshape(-1,1); y=annual['total_emissions_tonnes'].values; y_label="CO₂ (tonnes)"
     else:
-        X=annual['year'].values.reshape(-1,1)
-        y=annual['total_avoided_co2'].values
-        y_label="CO₂ Avoided (tonnes)"
-    model=LinearRegression()
-    model.fit(X,y)
-    last_year=int(annual['year'].max())
-    future_years=np.arange(last_year+1,last_year+1+n_years)
-    preds=model.predict(future_years.reshape(-1,1))
-    hist_df=pd.DataFrame({"year":annual['year'],"value":y})
-    fut_df=pd.DataFrame({"year":future_years,"value":preds})
-    comb=pd.concat([hist_df,fut_df],ignore_index=True)
-    chart_forecast=alt.Chart(comb).mark_line(point=True,color="#6A5ACD").encode(
-        x="year:Q",y=alt.Y("value:Q",title=y_label),
-        tooltip=[alt.Tooltip("year:Q"),alt.Tooltip("value:Q",format=",.0f")]
+        X = annual['year'].values.reshape(-1,1); y=annual['total_avoided_co2'].values; y_label="Avoided CO₂ (tonnes)"
+    model = LinearRegression(); model.fit(X,y)
+    last_year = int(annual['year'].max())
+    future_years = np.arange(last_year+1,last_year+1+n_years)
+    preds = model.predict(future_years.reshape(-1,1))
+    hist_df = pd.DataFrame({"year":annual['year'],"value":y})
+    fut_df = pd.DataFrame({"year":future_years,"value":preds})
+    comb = pd.concat([hist_df,fut_df],ignore_index=True)
+    chart_forecast = alt.Chart(comb).mark_line(point=True,color="#6A5ACD").encode(
+        x="year:Q", y=alt.Y("value:Q", title=y_label),
+        tooltip=[alt.Tooltip("year:Q"), alt.Tooltip("value:Q",format=",.0f")]
     ).properties(height=350,width=700)
     st.altair_chart(chart_forecast)
 
 # ------------------------
-# Insights
+# Kenya-focused insights
 # ------------------------
+trees = int(total_avoided/22)  # 22 tonnes/year per tree approx
+cars = int(total_avoided/4.6)  # 4.6 tonnes CO2/year per car approx
+homes = int(total_avoided/7.5) # 7.5 tonnes CO2/year per home approx
 insights_list=[
-    f"Carbon saved this year is equivalent to planting {equiv['trees']} trees.",
-    f"Emissions reduction is equivalent to taking {equiv['cars']} cars off the road.",
-    f"Sustainable energy has powered {equiv['homes']} homes.",
-    "Using renewable energy reduces emissions, improves air quality, and supports Kenya’s sustainable energy vision."
+    f"In Kenya, carbon saved this year is equivalent to planting {trees} trees.",
+    f"This reduction is like taking {cars} cars off Kenyan roads.",
+    f"Sustainable energy has powered approximately {homes} Kenyan homes.",
+    "Renewable energy adoption in Kenya improves air quality and supports national energy goals."
 ]
 st.subheader("💡 Insights")
 for i,insight in enumerate(insights_list,1):
@@ -259,64 +248,51 @@ for i,insight in enumerate(insights_list,1):
 # ------------------------
 # PDF Generation
 # ------------------------
-def save_chart_image(chart):
-    buf=BytesIO()
-    chart.save(buf, format="png", scale_factor=2)
-    buf.seek(0)
-    return buf
-
 def generate_pdf(metrics_dict, insights_list, charts):
-    buffer=BytesIO()
-    c=canvas.Canvas(buffer,pagesize=letter)
-    width,height=letter
-    c.setFont("Helvetica-Bold",20)
-    c.drawString(50,height-50,"Carbon Emission Tracker Report")
-    y_pos=height-100
+    buffer = BytesIO()
+    c = canvas.Canvas(buffer, pagesize=letter)
+    width, height = letter
+    c.setFont("Helvetica-Bold",20); c.drawString(50,height-50,"Kenya Carbon Emission Tracker Report")
+    y_pos = height-100
 
     # Metrics
     c.setFont("Helvetica",12)
-    for k,v in metrics_dict.items():
-        c.drawString(50,y_pos,f"{k}: {v}")
-        y_pos-=20
+    for k,v in metrics_dict.items(): c.drawString(50,y_pos,f"{k}: {v}"); y_pos-=20
     y_pos-=10
 
     # Insights
-    c.setFont("Helvetica-Bold",14)
-    c.drawString(50,y_pos,"Insights:")
-    y_pos-=20
+    c.setFont("Helvetica-Bold",14); c.drawString(50,y_pos,"Insights:"); y_pos-=20
     c.setFont("Helvetica",12)
-    for insight in insights_list:
-        c.drawString(60,y_pos,f"- {insight}")
-        y_pos-=20
+    for insight in insights_list: c.drawString(60,y_pos,f"- {insight}"); y_pos-=20
     y_pos-=10
 
     # Charts
     for chart in charts:
-        try:
-            img_buf=save_chart_image(chart)
-            img=Image.open(img_buf)
-            img_reader=ImageReader(img)
-            if y_pos<250:
-                c.showPage()
-                y_pos=height-50
-            c.drawImage(img_reader,50,y_pos-250,width=500,height=250)
-            y_pos-=270
-        except:
-            continue
+        img_buf = save_chart_image(chart)
+        if img_buf is None: continue
+        img = Image.open(img_buf)
+        img_reader = ImageReader(img)
+        if y_pos<250: c.showPage(); y_pos=height-50
+        c.drawImage(img_reader,50,y_pos-250,width=500,height=250)
+        y_pos-=270
 
-    c.save()
-    buffer.seek(0)
+    c.save(); buffer.seek(0)
     return buffer
 
-metrics_dict={
+def save_chart_image(chart):
+    buf = BytesIO()
+    try: alt_save(chart, fp=buf, fmt="png", scale_factor=2); buf.seek(0); return buf
+    except Exception as e: st.error(f"Chart PNG generation failed: {e}"); return None
+
+metrics_dict = {
     "Total Generation (GWh)":f"{total_gen:,.0f}",
-    "Total CO₂ (tonnes)":f"{total_emissions:,.0f}",
-    "CO₂ Avoided (tonnes)":f"{total_avoided:,.0f}"
+    "Total CO₂ Emissions (tonnes)":f"{total_emissions:,.0f}",
+    "Total CO₂ Avoided (tonnes)":f"{total_avoided:,.0f}"
 }
 
-charts_to_save=[chart_gen_source, chart_em_source, chart_avoided_source]
+charts_to_save = [chart_gen_source, chart_em_source, chart_avoided_source]
 if 'chart_forecast' in locals(): charts_to_save.append(chart_forecast)
 
 if st.button("📄 Generate & Download PDF Report"):
     pdf_buffer = generate_pdf(metrics_dict, insights_list, charts_to_save)
-    st.download_button(label="📥 Download PDF", data=pdf_buffer, file_name="carbon_emission_report.pdf", mime="application/pdf")
+    st.download_button(label="📥 Download PDF", data=pdf_buffer, file_name="kenya_carbon_report.pdf", mime="application/pdf")
