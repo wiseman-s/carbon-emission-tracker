@@ -113,6 +113,14 @@ st.subheader("Preview of cleaned data (first 20 rows)")
 st.dataframe(df.head(20))
 
 # ------------------------
+# Per-row CO2 avoided
+# ------------------------
+st.subheader("🌱 Impact per Entry (CO₂ Avoided)")
+df_display = df.copy()
+df_display['avoided_co2'] = df_display['avoided_co2'].round(0)
+st.dataframe(df_display[['year','source','generation_gwh','co2_tonnes','avoided_co2']])
+
+# ------------------------
 # Aggregations
 # ------------------------
 gen_by_source = df.groupby("source", as_index=False)["generation_gwh"].sum().sort_values("generation_gwh", ascending=False)
@@ -239,25 +247,33 @@ insights_list=[
     "Using renewable energy reduces emissions, improves air quality, and supports Kenya’s sustainable energy vision."
 ]
 st.subheader("💡 Insights")
-for i,insight in enumerate(insights_list,1):
+for i, insight in enumerate(insights_list,1):
     st.markdown(f"{i}. {insight}")
 
 # ------------------------
-# PDF generation (Streamlit Cloud compatible)
+# PDF generation
 # ------------------------
-def generate_pdf(metrics_dict, insights_list):
+def save_chart_image(chart):
+    buf=BytesIO()
+    chart.save(buf, format="png", scale_factor=2)
+    buf.seek(0)
+    return buf
+
+def generate_pdf(metrics_dict, insights_list, charts):
     buffer=BytesIO()
     c=canvas.Canvas(buffer,pagesize=letter)
     width,height=letter
     c.setFont("Helvetica-Bold",20)
     c.drawString(50,height-50,"Carbon Emission Tracker Report")
     y_pos=height-100
+
     # Metrics
     c.setFont("Helvetica",12)
     for k,v in metrics_dict.items():
         c.drawString(50,y_pos,f"{k}: {v}")
         y_pos-=20
     y_pos-=10
+
     # Insights
     c.setFont("Helvetica-Bold",14)
     c.drawString(50,y_pos,"Insights:")
@@ -266,21 +282,35 @@ def generate_pdf(metrics_dict, insights_list):
     for insight in insights_list:
         c.drawString(60,y_pos,f"- {insight}")
         y_pos-=20
+    y_pos-=10
+
+    # Charts
+    for chart in charts:
+        try:
+            img_buf=save_chart_image(chart)
+            from PIL import Image
+            from reportlab.lib.utils import ImageReader
+            img=Image.open(img_buf)
+            img_reader=ImageReader(img)
+            if y_pos<250:
+                c.showPage()
+                y_pos=height-50
+            c.drawImage(img_reader,50,y_pos-250,width=500,height=250)
+            y_pos-=270
+        except Exception as e:
+            continue
+
     c.save()
     buffer.seek(0)
     return buffer
 
-metrics_dict={
-    "Total Generation (GWh)":f"{total_gen:,.0f}",
-    "Total CO₂ (tonnes)":f"{total_emissions:,.0f}",
-    "CO₂ Avoided (tonnes)":f"{total_avoided:,.0f}"
-}
+metrics_dict={"Total Generation (GWh)":f"{total_gen:,.0f}",
+              "Total CO₂ (tonnes)":f"{total_emissions:,.0f}",
+              "CO₂ Avoided (tonnes)":f"{total_avoided:,.0f}"}
+
+charts_to_save=[chart_gen_source,chart_em_source,chart_avoided_source]
+if 'chart_forecast' in locals(): charts_to_save.append(chart_forecast)
 
 if st.button("📄 Generate & Download PDF Report"):
-    pdf_buffer=generate_pdf(metrics_dict, insights_list)
-    st.download_button(
-        label="📥 Download PDF",
-        data=pdf_buffer,
-        file_name="carbon_emission_report.pdf",
-        mime="application/pdf"
-    )
+    pdf_buffer=generate_pdf(metrics_dict,insights_list,charts_to_save)
+    st.download_button(label="📥 Download PDF",data=pdf_buffer,file_name="carbon_emission_report.pdf",mime="application/pdf")
