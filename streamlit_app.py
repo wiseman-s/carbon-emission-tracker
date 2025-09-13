@@ -10,6 +10,7 @@ from reportlab.pdfgen import canvas
 from reportlab.lib.pagesizes import letter
 from reportlab.lib.utils import ImageReader
 from PIL import Image
+from textwrap import wrap
 
 # ------------------------
 # Page config
@@ -248,6 +249,10 @@ def save_chart_image(chart):
     buf.seek(0)
     return buf
 
+def wrap_text(text, width=95):
+    """Wrap text so it doesn't overflow in PDF."""
+    return "\n".join(wrap(text, width))
+
 def generate_pdf(metrics_dict, insights_list, charts):
     buffer = BytesIO()
     c = canvas.Canvas(buffer, pagesize=letter)
@@ -269,8 +274,15 @@ def generate_pdf(metrics_dict, insights_list, charts):
     y_pos -= 20
     c.setFont("Helvetica", 12)
     for insight in insights_list:
-        c.drawString(60, y_pos, f"- {insight}")
-        y_pos -= 20
+        wrapped = wrap_text(insight, width=90).split("\n")
+        for line in wrapped:
+            c.drawString(60, y_pos, f"- {line}")
+            y_pos -= 15
+            if y_pos < 100:
+                c.showPage()
+                c.setFont("Helvetica", 12)
+                y_pos = height - 50
+        y_pos -= 5
     y_pos -= 10
 
     # Charts
@@ -279,11 +291,17 @@ def generate_pdf(metrics_dict, insights_list, charts):
             img_buf = save_chart_image(chart)
             img = Image.open(img_buf)
             img_reader = ImageReader(img)
-            if y_pos < 250:
+
+            chart_height = 250
+            chart_width = 500
+
+            if y_pos < chart_height + 60:
                 c.showPage()
                 y_pos = height - 50
-            c.drawImage(img_reader, 50, y_pos-250, width=500, height=250)
-            y_pos -= 270
+
+            c.drawImage(img_reader, 50, y_pos-chart_height, width=chart_width, height=chart_height)
+            y_pos -= (chart_height + 40)
+
         except Exception as e:
             print(f"Skipping chart due to error: {e}")
 
@@ -323,3 +341,4 @@ st.markdown(
     """,
     unsafe_allow_html=True
 )
+
