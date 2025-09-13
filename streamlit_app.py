@@ -337,7 +337,7 @@ st.markdown(
     """
     <hr>
     <p style='text-align:center; font-size:12px; color:gray;'>
-    System created by Simon Wanyoike • Contact: <a href='mailto:symoprof83@gmail.com'>symoprof83@gmail.com</a>
+    Created by Simon Wanyoike • Contact: <a href='mailto:symoprof83@gmail.com'>symoprof83@gmail.com</a>
     </p>
     """,
     unsafe_allow_html=True
