@@ -34,16 +34,26 @@ st.sidebar.markdown("Powering People for a Better Tomorrow — sustainable, reli
 st.sidebar.markdown("---")
 
 # ------------------------
-# Upload Guidelines
+# Upload Guidelines (enhanced)
 # ------------------------
-st.sidebar.info(
+st.sidebar.markdown(
     """
-    **📄 Upload Guidelines**
+    ## 📄 Upload Guidelines
+    Please follow these rules when uploading your energy data:
+
     - Only **CSV** or **Excel** files are allowed.
-    - Maximum file size: **10 MB**.
-    - Ensure column names match the required format: `Month, Geothermal, Hydro, Solar, Wind`.
+    - Ensure column names match the required format:
+      **Month | Geothermal | Hydro | Solar | Wind**
     - Dates should be in **ISO format** (YYYY-MM-DD).
     - Avoid empty rows or columns.
+
+    **Example of how your data should look:**
+
+    | Month       | Geothermal | Hydro | Solar | Wind |
+    |------------|------------|-------|-------|------|
+    | 2023-01-31 | 120        | 340   | 50    | 25   |
+    | 2023-02-28 | 130        | 320   | 60    | 30   |
+    | 2023-03-31 | 125        | 330   | 55    | 28   |
     """
 )
 
