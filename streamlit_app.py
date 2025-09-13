@@ -37,7 +37,8 @@ st.sidebar.markdown("""
 - Required columns: `year`, `source`, `generation_gwh`, `co2_tonnes`
 - `year` should be numeric (e.g., 2023)
 - `source` should be one of: Hydro, Solar, Wind, Geothermal, Thermal
-- `generation_gwh` and `co2_tonnes` must be numeric
+- `generation_gwh` must be numeric
+- If `co2_tonnes` is missing, the system will calculate it automatically
 """)
 st.sidebar.markdown("#### Sample Dataset")
 sample_df = pd.DataFrame({
@@ -56,7 +57,19 @@ if 'df' not in st.session_state:
     st.session_state.message = None
 
 # ------------------------
-# Robust loader
+# Default CO2 emission factors (tonnes per GWh)
+# ------------------------
+default_emission_factors = {
+    "Hydro": 0,
+    "Solar": 0,
+    "Wind": 0,
+    "Geothermal": 5,   # example value
+    "Thermal": 900,    # example value for coal/gas
+    "Unknown": 100     # fallback for unknown sources
+}
+
+# ------------------------
+# Robust loader with CO2 calculation
 # ------------------------
 def load_energy_data_safe(uploaded_file=None):
     try:
@@ -83,22 +96,33 @@ def load_energy_data_safe(uploaded_file=None):
                     df[col] = 0
 
         # Convert numeric columns
-        for col in ["year", "generation_gwh", "co2_tonnes"]:
-            df[col] = pd.to_numeric(df[col].astype(str).str.replace(",", "").str.strip(), errors='coerce')
+        df['year'] = pd.to_numeric(df['year'].astype(str).str.replace(",", "").str.strip(), errors='coerce')
+        df['generation_gwh'] = pd.to_numeric(df['generation_gwh'].astype(str).str.replace(",", "").str.strip(), errors='coerce')
+
+        # Compute CO2 if missing or zero
+        df['co2_tonnes'] = pd.to_numeric(df.get('co2_tonnes', 0), errors='coerce')
+        def compute_co2(row):
+            try:
+                if pd.isna(row['co2_tonnes']) or row['co2_tonnes'] == 0:
+                    factor = default_emission_factors.get(row['source'], 100)
+                    return row['generation_gwh'] * factor
+                return row['co2_tonnes']
+            except:
+                return 0
+        df['co2_tonnes'] = df.apply(compute_co2, axis=1)
 
         # Mark invalid rows
         df['valid'] = df['year'].notna() & df['source'].notna() & df['generation_gwh'].notna() & df['co2_tonnes'].notna()
-
         if df['valid'].sum() == 0:
             return None, "No valid rows found. Check column names and data formatting."
 
-        # Show warning if some rows are invalid
         if df['valid'].sum() < len(df):
-            message = "Some rows have missing or invalid data and will be ignored in analysis."
+            message = "Some rows have missing or invalid data and were ignored in analysis."
 
         df_clean = df[df['valid']].copy()
         df_clean = df_clean.reset_index(drop=True)
         return df_clean, message
+
     except Exception as e:
         return None, f"Error loading dataset: {e}"
 
@@ -181,5 +205,5 @@ if not annual.empty:
 
 # ------------------------
 # Metrics, forecast, insights, PDF generation
-# (Keep your original code here, unchanged)
 # ------------------------
+# Keep your original code for metrics, forecast, insights, PDF here
