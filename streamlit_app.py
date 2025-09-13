@@ -11,13 +11,9 @@ from PIL import Image
 from reportlab.lib.utils import ImageReader
 
 # ------------------------
-# Safe chart-to-PNG function
+# Safe chart-to-PNG function (skip if altair_saver missing)
 # ------------------------
 def save_chart_image(chart):
-    """
-    Attempt to save an Altair chart to PNG.
-    If altair_saver is not installed, return None.
-    """
     try:
         from io import BytesIO
         from altair_saver import save as alt_save
@@ -26,7 +22,6 @@ def save_chart_image(chart):
         buf.seek(0)
         return buf
     except ModuleNotFoundError:
-        # altair_saver not installed, skip chart
         return None
     except Exception:
         return None
@@ -36,9 +31,6 @@ def save_chart_image(chart):
 # ------------------------
 st.set_page_config(page_title="Kenya Carbon Emission Tracker", page_icon="🌍", layout="wide")
 
-# ------------------------
-# Heading
-# ------------------------
 st.title("🌍 Kenya Carbon Emission Tracker")
 st.markdown("### Visualize, estimate, and explore emission scenarios for energy generation in Kenya")
 
@@ -163,7 +155,84 @@ st.subheader("💡 Insights")
 for i,insight in enumerate(insights_list,1): st.markdown(f"{i}. {insight}")
 
 # ------------------------
-# PDF Generation
+# Charts
+# ------------------------
+gen_by_source = df.groupby("source", as_index=False)["generation_gwh"].sum()
+em_by_source = df.groupby("source", as_index=False)["co2_tonnes"].sum()
+avoided_by_source = df.groupby("source", as_index=False)["avoided_co2"].sum()
+
+st.subheader("📊 Energy Generation by Source")
+chart_gen_source = alt.Chart(gen_by_source).mark_bar().encode(
+    x="source:N", y="generation_gwh:Q", color="source:N",
+    tooltip=["source","generation_gwh"]
+).properties(height=400,width=700)
+st.altair_chart(chart_gen_source)
+
+st.subheader("🌫️ CO₂ Emissions by Source")
+chart_em_source = alt.Chart(em_by_source).mark_bar().encode(
+    x="source:N", y="co2_tonnes:Q", color="source:N",
+    tooltip=["source","co2_tonnes"]
+).properties(height=400,width=700)
+st.altair_chart(chart_em_source)
+
+st.subheader("🌱 CO₂ Avoided by Source")
+chart_avoided_source = alt.Chart(avoided_by_source).mark_bar().encode(
+    x="source:N", y="avoided_co2:Q", color="source:N",
+    tooltip=["source","avoided_co2"]
+).properties(height=400,width=700)
+st.altair_chart(chart_avoided_source)
+
+# ------------------------
+# Annual trends + forecast
+# ------------------------
+annual = df.groupby("year", as_index=False).agg(
+    total_generation_gwh=("generation_gwh","sum"),
+    total_emissions_tonnes=("co2_tonnes","sum"),
+    total_avoided_co2=("avoided_co2","sum")
+).sort_values("year")
+
+st.subheader("📈 Annual Trends")
+chart_gen_annual = alt.Chart(annual).mark_line(point=True,color="#2E8B57").encode(
+    x="year:Q", y="total_generation_gwh:Q", tooltip=["year","total_generation_gwh"]
+)
+chart_em_annual = alt.Chart(annual).mark_line(point=True,color="#FF8C00").encode(
+    x="year:Q", y="total_emissions_tonnes:Q", tooltip=["year","total_emissions_tonnes"]
+)
+chart_avoided_annual = alt.Chart(annual).mark_line(point=True,color="#2E8B57").encode(
+    x="year:Q", y="total_avoided_co2:Q", tooltip=["year","total_avoided_co2"]
+)
+
+col1,col2,col3 = st.columns(3)
+col1.altair_chart(chart_gen_annual)
+col2.altair_chart(chart_em_annual)
+col3.altair_chart(chart_avoided_annual)
+
+st.subheader("🔮 Quick Forecast (experimental)")
+forecast_target = st.selectbox("Forecast target", options=["Total Generation (GWh)","Total CO₂ (tonnes)","Total CO₂ Avoided (tonnes)"])
+n_years = st.slider("Forecast years ahead",1,10,3)
+
+if len(annual)>=2:
+    if forecast_target=="Total Generation (GWh)":
+        X = annual['year'].values.reshape(-1,1); y = annual['total_generation_gwh'].values; y_label="Generation (GWh)"
+    elif forecast_target=="Total CO₂ (tonnes)":
+        X = annual['year'].values.reshape(-1,1); y = annual['total_emissions_tonnes'].values; y_label="CO₂ (tonnes)"
+    else:
+        X = annual['year'].values.reshape(-1,1); y = annual['total_avoided_co2'].values; y_label="Avoided CO₂ (tonnes)"
+    model = LinearRegression(); model.fit(X,y)
+    last_year = int(annual['year'].max())
+    future_years = np.arange(last_year+1,last_year+1+n_years)
+    preds = model.predict(future_years.reshape(-1,1))
+    hist_df = pd.DataFrame({"year":annual['year'],"value":y})
+    fut_df = pd.DataFrame({"year":future_years,"value":preds})
+    comb = pd.concat([hist_df,fut_df],ignore_index=True)
+    chart_forecast = alt.Chart(comb).mark_line(point=True,color="#6A5ACD").encode(
+        x="year:Q", y=alt.Y("value:Q",title=y_label),
+        tooltip=["year","value"]
+    ).properties(height=350,width=700)
+    st.altair_chart(chart_forecast)
+
+# ------------------------
+# PDF Generation (text only)
 # ------------------------
 def generate_pdf(metrics_dict, insights_list):
     buffer = BytesIO()
@@ -171,7 +240,6 @@ def generate_pdf(metrics_dict, insights_list):
     width,height = letter
     c.setFont("Helvetica-Bold",20); c.drawString(50,height-50,"Kenya Carbon Emission Tracker Report")
     y_pos = height-100
-
     c.setFont("Helvetica",12)
     for k,v in metrics_dict.items(): c.drawString(50,y_pos,f"{k}: {v}"); y_pos-=20
     y_pos-=10
@@ -179,7 +247,6 @@ def generate_pdf(metrics_dict, insights_list):
     c.setFont("Helvetica",12)
     for insight in insights_list: c.drawString(60,y_pos,f"- {insight}"); y_pos-=20
     y_pos-=10
-
     c.save(); buffer.seek(0)
     return buffer
 
