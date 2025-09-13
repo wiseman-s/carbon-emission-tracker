@@ -187,15 +187,9 @@ for i, insight in enumerate(insights_list, 1):
     st.markdown(f"{i}. {insight}")
 
 # ------------------------
-# PDF generation
+# PDF generation (Cloud-compatible)
 # ------------------------
-def save_chart_image(chart):
-    buf = BytesIO()
-    chart.save(buf, format="png", scale_factor=2)
-    buf.seek(0)
-    return buf
-
-def generate_pdf(metrics_dict, insights_list, charts):
+def generate_pdf(metrics_dict, insights_list, df_preview):
     buffer = BytesIO()
     c = canvas.Canvas(buffer, pagesize=letter)
     width, height = letter
@@ -220,16 +214,18 @@ def generate_pdf(metrics_dict, insights_list, charts):
         y_pos -= 20
     y_pos -= 10
 
-    # Charts
-    for chart in charts:
-        img_buf = save_chart_image(chart)
-        img = Image.open(img_buf)
-        img_reader = ImageReader(img)
-        if y_pos < 250:
+    # Add a small table (first 10 rows)
+    c.setFont("Helvetica-Bold", 14)
+    c.drawString(50, y_pos, "Sample Data:")
+    y_pos -= 20
+    c.setFont("Helvetica", 10)
+    for i, row in df_preview.head(10).iterrows():
+        row_text = ", ".join(f"{col}: {row[col]}" for col in df_preview.columns)
+        c.drawString(60, y_pos, row_text[:120])  # truncate long rows
+        y_pos -= 15
+        if y_pos < 50:
             c.showPage()
             y_pos = height - 50
-        c.drawImage(img_reader, 50, y_pos-250, width=500, height=250)
-        y_pos -= 270
 
     c.save()
     buffer.seek(0)
@@ -242,10 +238,11 @@ metrics_dict = {
 }
 
 if st.button("📄 Generate & Download PDF Report"):
-    pdf_buffer = generate_pdf(metrics_dict, insights_list, [chart_gen_source, chart_em_source, chart_forecast] if 'chart_forecast' in locals() else [chart_gen_source, chart_em_source])
+    pdf_buffer = generate_pdf(metrics_dict, insights_list, df)
     st.download_button(
         label="📥 Download PDF",
         data=pdf_buffer,
         file_name="carbon_emission_report.pdf",
         mime="application/pdf"
     )
+
