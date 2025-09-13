@@ -1,4 +1,4 @@
-# app.py
+# streamlit_app.py
 import streamlit as st
 import pandas as pd
 import altair as alt
@@ -22,7 +22,7 @@ st.set_page_config(
 )
 
 # ------------------------
-# Heading
+# Heading always visible
 # ------------------------
 st.title("🌍 Carbon Emission Tracker")
 st.markdown("### Visualize, estimate, and explore emission scenarios for energy generation")
@@ -34,6 +34,9 @@ st.sidebar.title("Carbon Emission Tracker")
 st.sidebar.markdown("Powering People for a Better Tomorrow — sustainable, reliable, affordable energy.")
 st.sidebar.markdown("---")
 
+# ------------------------
+# Upload Guidelines (Plant-Level)
+# ------------------------
 st.sidebar.markdown(
     """
     ## 📄 Upload Guidelines (Plant-Level)
@@ -109,15 +112,15 @@ annual = df.groupby("year", as_index=False).agg(
 ).sort_values("year")
 
 # ------------------------
-# Color scale
+# Define consistent color scale
 # ------------------------
 color_scale = alt.Scale(
     domain=["Hydro", "Solar", "Geothermal", "Wind"],
-    range=["#1f77b4", "#ff7f0e", "#2ca02c", "#d62728"]
+    range=["#1f77b4", "#ff7f0e", "#2ca02c", "#d62728"]  # Blue, Orange, Green, Red
 )
 
 # ------------------------
-# Charts
+# Charts by source
 # ------------------------
 st.subheader("📊 Energy Generation by Source (Total)")
 chart_gen_source = alt.Chart(gen_by_source).mark_bar().encode(
@@ -137,6 +140,9 @@ chart_em_source = alt.Chart(em_by_source).mark_bar().encode(
 ).properties(height=400, width=700)
 st.altair_chart(chart_em_source)
 
+# ------------------------
+# Charts by plant
+# ------------------------
 if 'plant' in df.columns:
     st.subheader("🏭 Energy Generation by Plant")
     chart_gen_plant = alt.Chart(df).mark_bar().encode(
@@ -175,7 +181,7 @@ col1.altair_chart(chart_gen_annual)
 col2.altair_chart(chart_em_annual)
 
 # ------------------------
-# Metrics
+# Summary metrics & equivalents
 # ------------------------
 st.subheader("📌 Key Metrics")
 total_gen = gen_by_source['generation_gwh'].sum()
@@ -188,7 +194,7 @@ c3.metric("🌳 Tree Equivalent", f"{equiv['trees']:,} trees")
 st.markdown(f"Other equivalents: {equiv['cars']:,} cars off the road per year • {equiv['homes']:,} homes powered per year")
 
 # ------------------------
-# Forecast
+# Quick Forecast
 # ------------------------
 st.subheader("🔮 Quick Forecast (experimental)")
 forecast_target = st.selectbox("Forecast target", options=["Total Generation (GWh)", "Total CO₂ (tonnes)"])
@@ -200,12 +206,12 @@ if len(annual) >= 2:
         X = annual['year'].values.reshape(-1,1)
         y = annual['total_generation_gwh'].values
         y_label = "Generation (GWh)"
-        line_color = "#2ca02c"
+        line_color = "#2ca02c"  # Green for clean energy
     else:
         X = annual['year'].values.reshape(-1,1)
         y = annual['total_emissions_tonnes'].values
         y_label = "CO₂ (tonnes)"
-        line_color = "#d62728"
+        line_color = "#d62728"  # Red for emissions
     model = LinearRegression()
     model.fit(X, y)
     last_year = int(annual['year'].max())
@@ -235,16 +241,16 @@ for i, insight in enumerate(insights_list, 1):
     st.markdown(f"{i}. {insight}")
 
 # ------------------------
-# PDF Generation
+# PDF generation
 # ------------------------
 def save_chart_image(chart):
-    """Save Altair chart as PNG using kaleido"""
     buf = BytesIO()
-    chart.save(buf, format="png", scale_factor=2, engine="kaleido")
+    chart.save(buf, format="png", scale_factor=2)
     buf.seek(0)
     return buf
 
 def wrap_text(text, width=95):
+    """Wrap text so it doesn't overflow in PDF."""
     return "\n".join(wrap(text, width))
 
 def generate_pdf(metrics_dict, insights_list, charts):
@@ -295,6 +301,7 @@ def generate_pdf(metrics_dict, insights_list, charts):
 
             c.drawImage(img_reader, 50, y_pos-chart_height, width=chart_width, height=chart_height)
             y_pos -= (chart_height + 40)
+
         except Exception as e:
             print(f"Skipping chart due to error: {e}")
 
