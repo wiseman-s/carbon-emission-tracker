@@ -96,18 +96,24 @@ if 'plant' in df.columns:
     df['plant'] = df['plant'].str.title()
 
 # ------------------------
-# Aggregations
+# Plant selection for plant-level reporting
+# ------------------------
+if 'plant' in df.columns:
+    plants = df['plant'].unique().tolist()
+    selected_plant = st.sidebar.selectbox("Select Your Plant", options=plants)
+    plant_df = df[df['plant'] == selected_plant]
+    st.subheader(f"🏭 Plant: {selected_plant}")
+else:
+    plant_df = df.copy()  # fallback if no plant column
+
+# ------------------------
+# Aggregations (plant-level)
 # ------------------------
 # By source (current)
-gen_by_source = df.groupby("source", as_index=False)["generation_gwh"].sum().sort_values(by="generation_gwh", ascending=False)
-em_by_source = df.groupby("source", as_index=False)["co2_tonnes"].sum().sort_values(by="co2_tonnes", ascending=False)
+gen_by_source = plant_df.groupby("source", as_index=False)["generation_gwh"].sum().sort_values(by="generation_gwh", ascending=False)
+em_by_source = plant_df.groupby("source", as_index=False)["co2_tonnes"].sum().sort_values(by="co2_tonnes", ascending=False)
 
-# By plant (new)
-if 'plant' in df.columns:
-    gen_by_plant = df.groupby("plant", as_index=False)["generation_gwh"].sum().sort_values(by="generation_gwh", ascending=False)
-    em_by_plant = df.groupby("plant", as_index=False)["co2_tonnes"].sum().sort_values(by="co2_tonnes", ascending=False)
-
-annual = df.groupby("year", as_index=False).agg(
+annual = plant_df.groupby("year", as_index=False).agg(
     total_generation_gwh=pd.NamedAgg(column="generation_gwh", aggfunc="sum"),
     total_emissions_tonnes=pd.NamedAgg(column="co2_tonnes", aggfunc="sum")
 ).sort_values("year")
@@ -135,26 +141,6 @@ chart_em_source = alt.Chart(em_by_source).mark_bar().encode(
 st.altair_chart(chart_em_source)
 
 # ------------------------
-# Charts by plant (optional)
-# ------------------------
-if 'plant' in df.columns:
-    st.subheader("🏭 Energy Generation by Plant")
-    chart_gen_plant = alt.Chart(gen_by_plant).mark_bar().encode(
-        x=alt.X("plant:N", sort='-y', title="Plant"),
-        y=alt.Y("generation_gwh:Q", title="Total Generation (GWh)"),
-        tooltip=[alt.Tooltip("plant:N"), alt.Tooltip("generation_gwh:Q", format=",.2f")]
-    ).properties(height=400, width=700)
-    st.altair_chart(chart_gen_plant)
-
-    st.subheader("🌫️ CO₂ Emissions by Plant")
-    chart_em_plant = alt.Chart(em_by_plant).mark_bar().encode(
-        x=alt.X("plant:N", sort='-y', title="Plant"),
-        y=alt.Y("co2_tonnes:Q", title="Total CO₂ Emissions (tonnes)"),
-        tooltip=[alt.Tooltip("plant:N"), alt.Tooltip("co2_tonnes:Q", format=",.0f")]
-    ).properties(height=400, width=700)
-    st.altair_chart(chart_em_plant)
-
-# ------------------------
 # Annual Trends
 # ------------------------
 st.subheader("📈 Annual Trends")
@@ -177,7 +163,7 @@ col2.altair_chart(chart_em_annual)
 # ------------------------
 st.subheader("📌 Key Metrics")
 total_gen = gen_by_source['generation_gwh'].sum()
-total_emissions = em_by_source['co2_tonnes'].sum() if 'co2_tonnes' in df.columns else 0
+total_emissions = em_by_source['co2_tonnes'].sum() if 'co2_tonnes' in plant_df.columns else 0
 equiv = human_equivalents(total_emissions)
 c1, c2, c3 = st.columns(3)
 c1.metric("⚡ Total Generation (GWh)", f"{total_gen:,.0f}")
@@ -292,13 +278,11 @@ if st.button("📄 Generate & Download PDF Report"):
     charts_to_save = [chart_gen_source, chart_em_source]
     if chart_forecast:
         charts_to_save.append(chart_forecast)
-    if 'plant' in df.columns:
-        charts_to_save.extend([chart_gen_plant, chart_em_plant])
     pdf_buffer = generate_pdf(metrics_dict, insights_list, charts_to_save)
     st.download_button(
         label="📥 Download PDF",
         data=pdf_buffer,
-        file_name="carbon_emission_report.pdf",
+        file_name=f"{selected_plant}_carbon_emission_report.pdf",
         mime="application/pdf"
     )
 
