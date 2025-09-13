@@ -38,7 +38,7 @@ sample_df = pd.DataFrame({
     "year":[2023,2023,2023],
     "source":["Hydro","Solar","Wind"],
     "generation_gwh":[500,200,150],
-    "co2_tonnes":[0,50,30]
+    "co2_tonnes":[0,0,0]
 })
 st.sidebar.dataframe(sample_df)
 
@@ -53,6 +53,7 @@ if 'df' not in st.session_state:
 # Default CO2 emission factors (tonnes per GWh)
 # ------------------------
 default_emission_factors = {"Hydro":0,"Solar":0,"Wind":0,"Geothermal":5,"Thermal":900,"Unknown":100}
+baseline_emission_factor = 900  # tonnes/GWh if the energy was from Thermal
 
 # ------------------------
 # Load and clean data
@@ -82,6 +83,11 @@ def load_energy_data_safe(uploaded_file=None):
         # Calculate missing CO2
         df['co2_tonnes'] = df.apply(lambda row: row['generation_gwh']*default_emission_factors.get(row['source'],100)
                                     if pd.isna(row['co2_tonnes']) or row['co2_tonnes']==0 else row['co2_tonnes'], axis=1)
+
+        # Calculate avoided CO2 for renewable sources
+        df['avoided_co2'] = df.apply(lambda row: row['generation_gwh']*baseline_emission_factor
+                                     if row['source'] in ['Hydro','Solar','Wind'] else 0, axis=1)
+
         df['valid'] = df['year'].notna() & df['source'].notna() & df['generation_gwh'].notna() & df['co2_tonnes'].notna()
         if df['valid'].sum()==0: return None, "No valid rows found."
         if df['valid'].sum()<len(df): message="Some rows invalid and ignored."
@@ -111,9 +117,11 @@ st.dataframe(df.head(20))
 # ------------------------
 gen_by_source = df.groupby("source", as_index=False)["generation_gwh"].sum().sort_values("generation_gwh", ascending=False)
 em_by_source = df.groupby("source", as_index=False)["co2_tonnes"].sum().sort_values("co2_tonnes", ascending=False)
+avoided_by_source = df.groupby("source", as_index=False)["avoided_co2"].sum().sort_values("avoided_co2", ascending=False)
 annual = df.groupby("year", as_index=False).agg(
     total_generation_gwh=pd.NamedAgg(column="generation_gwh", aggfunc="sum"),
-    total_emissions_tonnes=pd.NamedAgg(column="co2_tonnes", aggfunc="sum")
+    total_emissions_tonnes=pd.NamedAgg(column="co2_tonnes", aggfunc="sum"),
+    total_avoided_co2=pd.NamedAgg(column="avoided_co2", aggfunc="sum")
 ).sort_values("year")
 annual['year'] = annual['year'].astype(int)
 
@@ -140,6 +148,15 @@ chart_em_source = alt.Chart(em_by_source).mark_bar().encode(
 ).properties(height=400, width=700)
 st.altair_chart(chart_em_source)
 
+st.subheader("🌱 Avoided CO₂ by Source (Total)")
+chart_avoided_source = alt.Chart(avoided_by_source).mark_bar().encode(
+    x=alt.X("source:N", sort='-y', title="Energy Source"),
+    y=alt.Y("avoided_co2:Q", title="Avoided CO₂ (tonnes)"),
+    color=alt.Color("source:N", scale=alt.Scale(domain=list(colors.keys()), range=list(colors.values())), legend=None),
+    tooltip=[alt.Tooltip("source:N"), alt.Tooltip("avoided_co2:Q", format=",.0f")]
+).properties(height=400, width=700)
+st.altair_chart(chart_avoided_source)
+
 st.subheader("📈 Annual Trends")
 chart_gen_annual = alt.Chart(annual).mark_line(point=True, color="#2E8B57").encode(
     x="year:Q", y="total_generation_gwh:Q",
@@ -149,9 +166,14 @@ chart_em_annual = alt.Chart(annual).mark_line(point=True, color="#FF8C00").encod
     x="year:Q", y="total_emissions_tonnes:Q",
     tooltip=[alt.Tooltip("year:Q"), alt.Tooltip("total_emissions_tonnes:Q", format=",.0f")]
 ).properties(height=300, width=600)
-col1, col2 = st.columns(2)
+chart_avoided_annual = alt.Chart(annual).mark_line(point=True, color="#6A5ACD").encode(
+    x="year:Q", y="total_avoided_co2:Q",
+    tooltip=[alt.Tooltip("year:Q"), alt.Tooltip("total_avoided_co2:Q", format=",.0f")]
+).properties(height=300, width=600)
+col1, col2, col3 = st.columns(3)
 col1.altair_chart(chart_gen_annual)
 col2.altair_chart(chart_em_annual)
+col3.altair_chart(chart_avoided_annual)
 
 # ------------------------
 # Key metrics
@@ -159,35 +181,40 @@ col2.altair_chart(chart_em_annual)
 st.subheader("📌 Key Metrics")
 total_gen = gen_by_source['generation_gwh'].sum()
 total_emissions = em_by_source['co2_tonnes'].sum()
+total_avoided = avoided_by_source['avoided_co2'].sum()
 
 def human_equivalents(total_co2_tonnes):
     total_kg = total_co2_tonnes*1000
-    trees = int(total_kg / 22)  # 1 tree absorbs ~22kg/year
-    cars = int(total_co2_tonnes / 4.6)  # 1 car ~4.6 tonnes/year
-    homes = int(total_co2_tonnes / 7.5)  # 1 home ~7.5 tonnes/year
+    trees = int(total_kg / 22)
+    cars = int(total_co2_tonnes / 4.6)
+    homes = int(total_co2_tonnes / 7.5)
     return {"trees":trees,"cars":cars,"homes":homes}
 
-equiv = human_equivalents(total_emissions)
+equiv = human_equivalents(total_avoided)
 c1,c2,c3 = st.columns(3)
 c1.metric("⚡ Total Generation (GWh)", f"{total_gen:,.0f}")
 c2.metric("🌫️ Total CO₂ (tonnes)", f"{total_emissions:,.0f}")
-c3.metric("🌳 Tree Equivalent", f"{equiv['trees']:,} trees")
+c3.metric("🌱 CO₂ Avoided (tonnes)", f"{total_avoided:,.0f}")
 
 # ------------------------
 # Forecast
 # ------------------------
 st.subheader("🔮 Quick Forecast (experimental)")
-forecast_target = st.selectbox("Forecast target", options=["Total Generation (GWh)","Total CO₂ (tonnes)"])
+forecast_target = st.selectbox("Forecast target", options=["Total Generation (GWh)","Total CO₂ (tonnes)","CO₂ Avoided (tonnes)"])
 n_years = st.slider("Forecast years ahead",1,10,3)
 if len(annual)>=2:
-    if forecast_target.startswith("Total Generation"):
+    if forecast_target=="Total Generation (GWh)":
         X=annual['year'].values.reshape(-1,1)
         y=annual['total_generation_gwh'].values
         y_label="Generation (GWh)"
-    else:
+    elif forecast_target=="Total CO₂ (tonnes)":
         X=annual['year'].values.reshape(-1,1)
         y=annual['total_emissions_tonnes'].values
         y_label="CO₂ (tonnes)"
+    else:
+        X=annual['year'].values.reshape(-1,1)
+        y=annual['total_avoided_co2'].values
+        y_label="CO₂ Avoided (tonnes)"
     model=LinearRegression()
     model.fit(X,y)
     last_year=int(annual['year'].max())
@@ -208,7 +235,7 @@ if len(annual)>=2:
 insights_list=[
     f"Carbon saved this year is equivalent to planting {equiv['trees']} trees.",
     f"Emissions reduction is equivalent to taking {equiv['cars']} cars off the road.",
-    f"Sustainable energy has powered {equiv['homes']} homes.",
+    f"Sustainable energy has avoided {equiv['homes']} tonnes CO₂ emissions.",
     "Using renewable energy reduces emissions, improves air quality, and supports Kenya’s sustainable energy vision."
 ]
 st.subheader("💡 Insights")
@@ -246,7 +273,7 @@ def generate_pdf(metrics_dict, insights_list):
 metrics_dict={
     "Total Generation (GWh)":f"{total_gen:,.0f}",
     "Total CO₂ (tonnes)":f"{total_emissions:,.0f}",
-    "Tree Equivalent":f"{equiv['trees']:,} trees"
+    "CO₂ Avoided (tonnes)":f"{total_avoided:,.0f}"
 }
 
 if st.button("📄 Generate & Download PDF Report"):
