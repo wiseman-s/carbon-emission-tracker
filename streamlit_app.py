@@ -7,6 +7,8 @@ from sklearn.linear_model import LinearRegression
 from io import BytesIO
 from reportlab.pdfgen import canvas
 from reportlab.lib.pagesizes import letter
+from PIL import Image
+from reportlab.lib.utils import ImageReader
 
 # ------------------------
 # Page config
@@ -113,12 +115,16 @@ st.subheader("Preview of cleaned data (first 20 rows)")
 st.dataframe(df.head(20))
 
 # ------------------------
-# Per-row CO2 avoided
+# Per-row CO2 avoided with invalid highlight
 # ------------------------
 st.subheader("🌱 Impact per Entry (CO₂ Avoided)")
+
+def highlight_invalid(row):
+    return ['background-color: #ffcccc' if not row.valid else '' for _ in row]
+
 df_display = df.copy()
 df_display['avoided_co2'] = df_display['avoided_co2'].round(0)
-st.dataframe(df_display[['year','source','generation_gwh','co2_tonnes','avoided_co2']])
+st.dataframe(df_display[['year','source','generation_gwh','co2_tonnes','avoided_co2','valid']].style.apply(highlight_invalid, axis=1))
 
 # ------------------------
 # Aggregations
@@ -243,15 +249,15 @@ if len(annual)>=2:
 insights_list=[
     f"Carbon saved this year is equivalent to planting {equiv['trees']} trees.",
     f"Emissions reduction is equivalent to taking {equiv['cars']} cars off the road.",
-    f"Sustainable energy has avoided {equiv['homes']} tonnes CO₂ emissions.",
+    f"Sustainable energy has powered {equiv['homes']} homes.",
     "Using renewable energy reduces emissions, improves air quality, and supports Kenya’s sustainable energy vision."
 ]
 st.subheader("💡 Insights")
-for i, insight in enumerate(insights_list,1):
+for i,insight in enumerate(insights_list,1):
     st.markdown(f"{i}. {insight}")
 
 # ------------------------
-# PDF generation
+# PDF Generation
 # ------------------------
 def save_chart_image(chart):
     buf=BytesIO()
@@ -288,8 +294,6 @@ def generate_pdf(metrics_dict, insights_list, charts):
     for chart in charts:
         try:
             img_buf=save_chart_image(chart)
-            from PIL import Image
-            from reportlab.lib.utils import ImageReader
             img=Image.open(img_buf)
             img_reader=ImageReader(img)
             if y_pos<250:
@@ -297,20 +301,22 @@ def generate_pdf(metrics_dict, insights_list, charts):
                 y_pos=height-50
             c.drawImage(img_reader,50,y_pos-250,width=500,height=250)
             y_pos-=270
-        except Exception as e:
+        except:
             continue
 
     c.save()
     buffer.seek(0)
     return buffer
 
-metrics_dict={"Total Generation (GWh)":f"{total_gen:,.0f}",
-              "Total CO₂ (tonnes)":f"{total_emissions:,.0f}",
-              "CO₂ Avoided (tonnes)":f"{total_avoided:,.0f}"}
+metrics_dict={
+    "Total Generation (GWh)":f"{total_gen:,.0f}",
+    "Total CO₂ (tonnes)":f"{total_emissions:,.0f}",
+    "CO₂ Avoided (tonnes)":f"{total_avoided:,.0f}"
+}
 
-charts_to_save=[chart_gen_source,chart_em_source,chart_avoided_source]
+charts_to_save=[chart_gen_source, chart_em_source, chart_avoided_source]
 if 'chart_forecast' in locals(): charts_to_save.append(chart_forecast)
 
 if st.button("📄 Generate & Download PDF Report"):
-    pdf_buffer=generate_pdf(metrics_dict,insights_list,charts_to_save)
-    st.download_button(label="📥 Download PDF",data=pdf_buffer,file_name="carbon_emission_report.pdf",mime="application/pdf")
+    pdf_buffer = generate_pdf(metrics_dict, insights_list, charts_to_save)
+    st.download_button(label="📥 Download PDF", data=pdf_buffer, file_name="carbon_emission_report.pdf", mime="application/pdf")
