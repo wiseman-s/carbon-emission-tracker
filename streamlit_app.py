@@ -65,7 +65,7 @@ default_emission_factors = {
     "Wind": 0,
     "Geothermal": 5,   # example value
     "Thermal": 900,    # example value for coal/gas
-    "Unknown": 100     # fallback for unknown sources
+    "Unknown": 100     # fallback
 }
 
 # ------------------------
@@ -164,46 +164,157 @@ annual['year'] = annual['year'].astype(int)
 colors = {"Hydro":"#1f77b4","Solar":"#ff7f0e","Wind":"#2ca02c","Geothermal":"#d62728","Thermal":"#9467bd"}
 
 st.subheader("📊 Energy Generation by Source (Total)")
-if not gen_by_source.empty:
-    chart_gen_source = alt.Chart(gen_by_source).mark_bar().encode(
-        x=alt.X("source:N", sort='-y', title="Energy Source"),
-        y=alt.Y("generation_gwh:Q", title="Total Generation (GWh)"),
-        color=alt.Color("source:N", scale=alt.Scale(domain=list(colors.keys()), range=list(colors.values())), legend=None),
-        tooltip=[alt.Tooltip("source:N"), alt.Tooltip("generation_gwh:Q", format=",.2f")]
-    ).properties(height=400, width=700)
-    st.altair_chart(chart_gen_source)
-else:
-    st.info("No generation data to display.")
+chart_gen_source = alt.Chart(gen_by_source).mark_bar().encode(
+    x=alt.X("source:N", sort='-y', title="Energy Source"),
+    y=alt.Y("generation_gwh:Q", title="Total Generation (GWh)"),
+    color=alt.Color("source:N", scale=alt.Scale(domain=list(colors.keys()), range=list(colors.values())), legend=None),
+    tooltip=[alt.Tooltip("source:N"), alt.Tooltip("generation_gwh:Q", format=",.2f")]
+).properties(height=400, width=700)
+st.altair_chart(chart_gen_source)
 
 st.subheader("🌫️ CO₂ Emissions by Source (Total)")
-if not em_by_source.empty:
-    chart_em_source = alt.Chart(em_by_source).mark_bar().encode(
-        x=alt.X("source:N", sort='-y', title="Energy Source"),
-        y=alt.Y("co2_tonnes:Q", title="Total CO₂ Emissions (tonnes)"),
-        color=alt.Color("source:N", scale=alt.Scale(domain=list(colors.keys()), range=list(colors.values())), legend=None),
-        tooltip=[alt.Tooltip("source:N"), alt.Tooltip("co2_tonnes:Q", format=",.0f")]
-    ).properties(height=400, width=700)
-    st.altair_chart(chart_em_source)
-else:
-    st.info("No emissions data to display.")
+chart_em_source = alt.Chart(em_by_source).mark_bar().encode(
+    x=alt.X("source:N", sort='-y', title="Energy Source"),
+    y=alt.Y("co2_tonnes:Q", title="Total CO₂ Emissions (tonnes)"),
+    color=alt.Color("source:N", scale=alt.Scale(domain=list(colors.keys()), range=list(colors.values())), legend=None),
+    tooltip=[alt.Tooltip("source:N"), alt.Tooltip("co2_tonnes:Q", format=",.0f")]
+).properties(height=400, width=700)
+st.altair_chart(chart_em_source)
 
 st.subheader("📈 Annual Trends")
-if not annual.empty:
-    chart_gen_annual = alt.Chart(annual).mark_line(point=True, color="#2E8B57").encode(
-        x="year:Q",
-        y="total_generation_gwh:Q",
-        tooltip=[alt.Tooltip("year:Q"), alt.Tooltip("total_generation_gwh:Q", format=",.0f")]
-    ).properties(height=300, width=600)
-    chart_em_annual = alt.Chart(annual).mark_line(point=True, color="#FF8C00").encode(
-        x="year:Q",
-        y="total_emissions_tonnes:Q",
-        tooltip=[alt.Tooltip("year:Q"), alt.Tooltip("total_emissions_tonnes:Q", format=",.0f")]
-    ).properties(height=300, width=600)
-    col1, col2 = st.columns(2)
-    col1.altair_chart(chart_gen_annual)
-    col2.altair_chart(chart_em_annual)
+chart_gen_annual = alt.Chart(annual).mark_line(point=True, color="#2E8B57").encode(
+    x="year:Q",
+    y="total_generation_gwh:Q",
+    tooltip=[alt.Tooltip("year:Q"), alt.Tooltip("total_generation_gwh:Q", format=",.0f")]
+).properties(height=300, width=600)
+chart_em_annual = alt.Chart(annual).mark_line(point=True, color="#FF8C00").encode(
+    x="year:Q",
+    y="total_emissions_tonnes:Q",
+    tooltip=[alt.Tooltip("year:Q"), alt.Tooltip("total_emissions_tonnes:Q", format=",.0f")]
+).properties(height=300, width=600)
+col1, col2 = st.columns(2)
+col1.altair_chart(chart_gen_annual)
+col2.altair_chart(chart_em_annual)
 
 # ------------------------
-# Metrics, forecast, insights, PDF generation
+# Key Metrics
 # ------------------------
-# Keep your original code for metrics, forecast, insights, PDF here
+st.subheader("📌 Key Metrics")
+total_gen = gen_by_source['generation_gwh'].sum()
+total_emissions = em_by_source['co2_tonnes'].sum()
+equiv = human_equivalents(total_emissions)
+c1, c2, c3 = st.columns(3)
+c1.metric("⚡ Total Generation (GWh)", f"{total_gen:,.0f}")
+c2.metric("🌫️ Total CO₂ (tonnes)", f"{total_emissions:,.0f}")
+c3.metric("🌳 Tree Equivalent", f"{equiv['trees']:,} trees")
+
+# ------------------------
+# Forecast
+# ------------------------
+st.subheader("🔮 Quick Forecast (experimental)")
+forecast_target = st.selectbox("Forecast target", options=["Total Generation (GWh)", "Total CO₂ (tonnes)"])
+n_years = st.slider("Forecast years ahead", 1, 10, 3)
+
+if len(annual) >= 2:
+    if forecast_target.startswith("Total Generation"):
+        X = annual['year'].values.reshape(-1,1)
+        y = annual['total_generation_gwh'].values
+        y_label = "Generation (GWh)"
+    else:
+        X = annual['year'].values.reshape(-1,1)
+        y = annual['total_emissions_tonnes'].values
+        y_label = "CO₂ (tonnes)"
+    model = LinearRegression()
+    model.fit(X, y)
+    last_year = int(annual['year'].max())
+    future_years = np.arange(last_year+1, last_year+1+n_years)
+    preds = model.predict(future_years.reshape(-1,1))
+    hist_df = pd.DataFrame({"year": annual['year'], "value": y})
+    fut_df = pd.DataFrame({"year": future_years, "value": preds})
+    comb = pd.concat([hist_df, fut_df], ignore_index=True)
+    chart_forecast = alt.Chart(comb).mark_line(point=True, color="#6A5ACD").encode(
+        x="year:Q",
+        y=alt.Y("value:Q", title=y_label),
+        tooltip=[alt.Tooltip("year:Q"), alt.Tooltip("value:Q", format=",.0f")]
+    ).properties(height=350, width=700)
+    st.altair_chart(chart_forecast)
+
+# ------------------------
+# Insights
+# ------------------------
+insights_list = [
+    f"Carbon saved this year is equivalent to planting {equiv['trees']} trees.",
+    f"Emissions reduction is equivalent to taking {equiv['cars']} cars off the road.",
+    f"Sustainable energy has powered {equiv['homes']} homes.",
+    "Using renewable energy reduces emissions, improves air quality, and supports Kenya’s sustainable energy vision."
+]
+st.subheader("💡 Insights")
+for i, insight in enumerate(insights_list, 1):
+    st.markdown(f"{i}. {insight}")
+
+# ------------------------
+# PDF generation and download
+# ------------------------
+def save_chart_image(chart):
+    buf = BytesIO()
+    chart.save(buf, format="png", scale_factor=2)
+    buf.seek(0)
+    return buf
+
+def generate_pdf(metrics_dict, insights_list, charts):
+    buffer = BytesIO()
+    c = canvas.Canvas(buffer, pagesize=letter)
+    width, height = letter
+    c.setFont("Helvetica-Bold", 20)
+    c.drawString(50, height-50, "Carbon Emission Tracker Report")
+    y_pos = height-100
+
+    # Metrics
+    c.setFont("Helvetica", 12)
+    for k,v in metrics_dict.items():
+        c.drawString(50, y_pos, f"{k}: {v}")
+        y_pos -= 20
+    y_pos -= 10
+
+    # Insights
+    c.setFont("Helvetica-Bold", 14)
+    c.drawString(50, y_pos, "Insights:")
+    y_pos -= 20
+    c.setFont("Helvetica", 12)
+    for insight in insights_list:
+        c.drawString(60, y_pos, f"- {insight}")
+        y_pos -= 20
+    y_pos -= 10
+
+    # Charts
+    for chart in charts:
+        img_buf = save_chart_image(chart)
+        img = Image.open(img_buf)
+        img_reader = ImageReader(img)
+        if y_pos < 250:
+            c.showPage()
+            y_pos = height - 50
+        c.drawImage(img_reader, 50, y_pos-250, width=500, height=250)
+        y_pos -= 270
+
+    c.save()
+    buffer.seek(0)
+    return buffer
+
+metrics_dict = {
+    "Total Generation (GWh)": f"{total_gen:,.0f}",
+    "Total CO₂ (tonnes)": f"{total_emissions:,.0f}",
+    "Tree Equivalent": f"{equiv['trees']:,} trees"
+}
+
+if st.button("📄 Generate & Download PDF Report"):
+    charts_to_save = [chart_gen_source, chart_em_source]
+    if 'chart_forecast' in locals():
+        charts_to_save.append(chart_forecast)
+    pdf_buffer = generate_pdf(metrics_dict, insights_list, charts_to_save)
+    st.download_button(
+        label="📥 Download PDF",
+        data=pdf_buffer,
+        file_name="carbon_emission_report.pdf",
+        mime="application/pdf"
+    )
