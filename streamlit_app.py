@@ -34,7 +34,7 @@ st.sidebar.markdown("Powering People for a Better Tomorrow — sustainable, reli
 st.sidebar.markdown("---")
 
 # ------------------------
-# Upload Guidelines (enhanced)
+# Upload Guidelines (enhanced with emojis)
 # ------------------------
 st.sidebar.markdown(
     """
@@ -42,18 +42,18 @@ st.sidebar.markdown(
     Please follow these rules when uploading your energy data:
 
     - Only **CSV** or **Excel** files are allowed.
-    - Ensure column names match the required format:
-      **Month | Geothermal | Hydro | Solar | Wind**
+    - Ensure column names match the required format:  
+      **📅 Month | ⚡ Geothermal | 💧 Hydro | ☀️ Solar | 🌬️ Wind**
     - Dates should be in **ISO format** (YYYY-MM-DD).
     - Avoid empty rows or columns.
 
     **Example of how your data should look:**
 
-    | Month       | Geothermal | Hydro | Solar | Wind |
-    |------------|------------|-------|-------|------|
-    | 2023-01-31 | 120        | 340   | 50    | 25   |
-    | 2023-02-28 | 130        | 320   | 60    | 30   |
-    | 2023-03-31 | 125        | 330   | 55    | 28   |
+    | 📅 Month    | ⚡ Geothermal | 💧 Hydro | ☀️ Solar | 🌬️ Wind |
+    |------------|--------------|----------|----------|---------|
+    | 2023-01-31 | 120          | 340      | 50       | 25      |
+    | 2023-02-28 | 130          | 320      | 60       | 30      |
+    | 2023-03-31 | 125          | 330      | 55       | 28      |
     """
 )
 
@@ -267,3 +267,16 @@ if st.button("📄 Generate & Download PDF Report"):
         file_name="carbon_emission_report.pdf",
         mime="application/pdf"
     )
+
+# ------------------------
+# Footer
+# ------------------------
+st.markdown(
+    """
+    <hr>
+    <p style='text-align:center; font-size:12px; color:gray;'>
+    System created by Simon Wanyoike • Contact: <a href='mailto:symoprof83@gmail.com'>symoprof83@gmail.com</a>
+    </p>
+    """,
+    unsafe_allow_html=True
+)
