@@ -8,17 +8,11 @@ from sklearn.linear_model import LinearRegression
 from io import BytesIO
 from reportlab.pdfgen import canvas
 from reportlab.lib.pagesizes import letter
-from reportlab.lib.utils import ImageReader
-from PIL import Image
 
 # ------------------------
 # Page config
 # ------------------------
-st.set_page_config(
-    page_title="Carbon Emission Tracker",
-    page_icon="🌍",
-    layout="wide"
-)
+st.set_page_config(page_title="Carbon Emission Tracker", page_icon="🌍", layout="wide")
 
 # ------------------------
 # Heading
@@ -35,17 +29,17 @@ st.sidebar.markdown("---")
 st.sidebar.markdown("### Dataset Guidelines")
 st.sidebar.markdown("""
 - Required columns: `year`, `source`, `generation_gwh`, `co2_tonnes`
-- `year` should be numeric (e.g., 2023)
-- `source` should be one of: Hydro, Solar, Wind, Geothermal, Thermal
-- `generation_gwh` must be numeric
-- If `co2_tonnes` is missing, the system will calculate it automatically
+- `year` numeric (e.g., 2023)
+- `source` in Hydro, Solar, Wind, Geothermal, Thermal
+- `generation_gwh` numeric
+- Missing `co2_tonnes` will be calculated automatically
 """)
 st.sidebar.markdown("#### Sample Dataset")
 sample_df = pd.DataFrame({
-    "year": [2023, 2023, 2023],
-    "source": ["Hydro", "Solar", "Wind"],
-    "generation_gwh": [500, 200, 150],
-    "co2_tonnes": [0, 50, 30]
+    "year":[2023,2023,2023],
+    "source":["Hydro","Solar","Wind"],
+    "generation_gwh":[500,200,150],
+    "co2_tonnes":[0,50,30]
 })
 st.sidebar.dataframe(sample_df)
 
@@ -57,19 +51,12 @@ if 'df' not in st.session_state:
     st.session_state.message = None
 
 # ------------------------
-# Default CO2 emission factors (tonnes per GWh)
+# Default CO2 emission factors
 # ------------------------
-default_emission_factors = {
-    "Hydro": 0,
-    "Solar": 0,
-    "Wind": 0,
-    "Geothermal": 5,   # example value
-    "Thermal": 900,    # example value for coal/gas
-    "Unknown": 100     # fallback
-}
+default_emission_factors = {"Hydro":0,"Solar":0,"Wind":0,"Geothermal":5,"Thermal":900,"Unknown":100}
 
 # ------------------------
-# Robust loader with CO2 calculation
+# Load and clean data
 # ------------------------
 def load_energy_data_safe(uploaded_file=None):
     try:
@@ -81,65 +68,37 @@ def load_energy_data_safe(uploaded_file=None):
         else:
             df = sample_df.copy()
 
-        # Normalize column names
         df.columns = [c.lower().strip().replace(" ", "_") for c in df.columns]
-
-        # Required columns
-        required_cols = ["year", "source", "generation_gwh", "co2_tonnes"]
+        required_cols = ["year","source","generation_gwh","co2_tonnes"]
         message = None
         for col in required_cols:
             if col not in df.columns:
-                message = f"Column '{col}' is missing. Filling with default values."
-                if col == "source":
-                    df[col] = "Unknown"
-                else:
-                    df[col] = 0
+                message = f"Column '{col}' missing. Filling default."
+                df[col] = "Unknown" if col=="source" else 0
 
-        # Convert numeric columns
-        df['year'] = pd.to_numeric(df['year'].astype(str).str.replace(",", "").str.strip(), errors='coerce')
-        df['generation_gwh'] = pd.to_numeric(df['generation_gwh'].astype(str).str.replace(",", "").str.strip(), errors='coerce')
+        df['year'] = pd.to_numeric(df['year'], errors='coerce')
+        df['generation_gwh'] = pd.to_numeric(df['generation_gwh'], errors='coerce')
+        df['co2_tonnes'] = pd.to_numeric(df.get('co2_tonnes',0), errors='coerce')
 
-        # Compute CO2 if missing or zero
-        df['co2_tonnes'] = pd.to_numeric(df.get('co2_tonnes', 0), errors='coerce')
-        def compute_co2(row):
-            try:
-                if pd.isna(row['co2_tonnes']) or row['co2_tonnes'] == 0:
-                    factor = default_emission_factors.get(row['source'], 100)
-                    return row['generation_gwh'] * factor
-                return row['co2_tonnes']
-            except:
-                return 0
-        df['co2_tonnes'] = df.apply(compute_co2, axis=1)
-
-        # Mark invalid rows
+        df['co2_tonnes'] = df.apply(lambda row: row['generation_gwh']*default_emission_factors.get(row['source'],100)
+                                    if pd.isna(row['co2_tonnes']) or row['co2_tonnes']==0 else row['co2_tonnes'], axis=1)
         df['valid'] = df['year'].notna() & df['source'].notna() & df['generation_gwh'].notna() & df['co2_tonnes'].notna()
-        if df['valid'].sum() == 0:
-            return None, "No valid rows found. Check column names and data formatting."
-
-        if df['valid'].sum() < len(df):
-            message = "Some rows have missing or invalid data and were ignored in analysis."
-
-        df_clean = df[df['valid']].copy()
-        df_clean = df_clean.reset_index(drop=True)
+        if df['valid'].sum()==0: return None, "No valid rows found."
+        if df['valid'].sum()<len(df): message="Some rows invalid and ignored."
+        df_clean = df[df['valid']].reset_index(drop=True)
         return df_clean, message
-
     except Exception as e:
-        return None, f"Error loading dataset: {e}"
+        return None, f"Error: {e}"
 
-# ------------------------
-# Upload file
-# ------------------------
-uploaded_file = st.sidebar.file_uploader("Upload Energy Data (CSV or Excel)", type=["csv", "xlsx"])
+uploaded_file = st.sidebar.file_uploader("Upload CSV/Excel", type=["csv","xlsx"])
 df, message = load_energy_data_safe(uploaded_file)
-
 st.session_state.df = df
 st.session_state.message = message
 
 if df is None:
     st.warning(message)
     st.stop()
-if message:
-    st.warning(message)
+if message: st.warning(message)
 
 # ------------------------
 # Data preview
@@ -183,13 +142,11 @@ st.altair_chart(chart_em_source)
 
 st.subheader("📈 Annual Trends")
 chart_gen_annual = alt.Chart(annual).mark_line(point=True, color="#2E8B57").encode(
-    x="year:Q",
-    y="total_generation_gwh:Q",
+    x="year:Q", y="total_generation_gwh:Q",
     tooltip=[alt.Tooltip("year:Q"), alt.Tooltip("total_generation_gwh:Q", format=",.0f")]
 ).properties(height=300, width=600)
 chart_em_annual = alt.Chart(annual).mark_line(point=True, color="#FF8C00").encode(
-    x="year:Q",
-    y="total_emissions_tonnes:Q",
+    x="year:Q", y="total_emissions_tonnes:Q",
     tooltip=[alt.Tooltip("year:Q"), alt.Tooltip("total_emissions_tonnes:Q", format=",.0f")]
 ).properties(height=300, width=600)
 col1, col2 = st.columns(2)
@@ -197,7 +154,7 @@ col1.altair_chart(chart_gen_annual)
 col2.altair_chart(chart_em_annual)
 
 # ------------------------
-# Key Metrics
+# Key metrics
 # ------------------------
 st.subheader("📌 Key Metrics")
 total_gen = gen_by_source['generation_gwh'].sum()
@@ -212,106 +169,80 @@ c3.metric("🌳 Tree Equivalent", f"{equiv['trees']:,} trees")
 # Forecast
 # ------------------------
 st.subheader("🔮 Quick Forecast (experimental)")
-forecast_target = st.selectbox("Forecast target", options=["Total Generation (GWh)", "Total CO₂ (tonnes)"])
-n_years = st.slider("Forecast years ahead", 1, 10, 3)
-
-if len(annual) >= 2:
+forecast_target = st.selectbox("Forecast target", options=["Total Generation (GWh)","Total CO₂ (tonnes)"])
+n_years = st.slider("Forecast years ahead",1,10,3)
+if len(annual)>=2:
     if forecast_target.startswith("Total Generation"):
         X = annual['year'].values.reshape(-1,1)
         y = annual['total_generation_gwh'].values
-        y_label = "Generation (GWh)"
+        y_label="Generation (GWh)"
     else:
         X = annual['year'].values.reshape(-1,1)
         y = annual['total_emissions_tonnes'].values
-        y_label = "CO₂ (tonnes)"
+        y_label="CO₂ (tonnes)"
     model = LinearRegression()
-    model.fit(X, y)
-    last_year = int(annual['year'].max())
-    future_years = np.arange(last_year+1, last_year+1+n_years)
-    preds = model.predict(future_years.reshape(-1,1))
-    hist_df = pd.DataFrame({"year": annual['year'], "value": y})
-    fut_df = pd.DataFrame({"year": future_years, "value": preds})
-    comb = pd.concat([hist_df, fut_df], ignore_index=True)
-    chart_forecast = alt.Chart(comb).mark_line(point=True, color="#6A5ACD").encode(
-        x="year:Q",
-        y=alt.Y("value:Q", title=y_label),
-        tooltip=[alt.Tooltip("year:Q"), alt.Tooltip("value:Q", format=",.0f")]
-    ).properties(height=350, width=700)
+    model.fit(X,y)
+    last_year=int(annual['year'].max())
+    future_years=np.arange(last_year+1,last_year+1+n_years)
+    preds=model.predict(future_years.reshape(-1,1))
+    hist_df=pd.DataFrame({"year":annual['year'],"value":y})
+    fut_df=pd.DataFrame({"year":future_years,"value":preds})
+    comb=pd.concat([hist_df,fut_df],ignore_index=True)
+    chart_forecast=alt.Chart(comb).mark_line(point=True,color="#6A5ACD").encode(
+        x="year:Q", y=alt.Y("value:Q",title=y_label),
+        tooltip=[alt.Tooltip("year:Q"), alt.Tooltip("value:Q",format=",.0f")]
+    ).properties(height=350,width=700)
     st.altair_chart(chart_forecast)
 
 # ------------------------
 # Insights
 # ------------------------
-insights_list = [
+insights_list=[
     f"Carbon saved this year is equivalent to planting {equiv['trees']} trees.",
     f"Emissions reduction is equivalent to taking {equiv['cars']} cars off the road.",
     f"Sustainable energy has powered {equiv['homes']} homes.",
     "Using renewable energy reduces emissions, improves air quality, and supports Kenya’s sustainable energy vision."
 ]
 st.subheader("💡 Insights")
-for i, insight in enumerate(insights_list, 1):
+for i,insight in enumerate(insights_list,1):
     st.markdown(f"{i}. {insight}")
 
 # ------------------------
-# PDF generation and download
+# PDF generation (Streamlit Cloud compatible)
 # ------------------------
-def save_chart_image(chart):
-    buf = BytesIO()
-    chart.save(buf, format="png", scale_factor=2)
-    buf.seek(0)
-    return buf
-
-def generate_pdf(metrics_dict, insights_list, charts):
-    buffer = BytesIO()
-    c = canvas.Canvas(buffer, pagesize=letter)
-    width, height = letter
-    c.setFont("Helvetica-Bold", 20)
-    c.drawString(50, height-50, "Carbon Emission Tracker Report")
-    y_pos = height-100
-
+def generate_pdf(metrics_dict, insights_list):
+    buffer=BytesIO()
+    c=canvas.Canvas(buffer,pagesize=letter)
+    width,height=letter
+    c.setFont("Helvetica-Bold",20)
+    c.drawString(50,height-50,"Carbon Emission Tracker Report")
+    y_pos=height-100
     # Metrics
-    c.setFont("Helvetica", 12)
+    c.setFont("Helvetica",12)
     for k,v in metrics_dict.items():
-        c.drawString(50, y_pos, f"{k}: {v}")
-        y_pos -= 20
-    y_pos -= 10
-
+        c.drawString(50,y_pos,f"{k}: {v}")
+        y_pos-=20
+    y_pos-=10
     # Insights
-    c.setFont("Helvetica-Bold", 14)
-    c.drawString(50, y_pos, "Insights:")
-    y_pos -= 20
-    c.setFont("Helvetica", 12)
+    c.setFont("Helvetica-Bold",14)
+    c.drawString(50,y_pos,"Insights:")
+    y_pos-=20
+    c.setFont("Helvetica",12)
     for insight in insights_list:
-        c.drawString(60, y_pos, f"- {insight}")
-        y_pos -= 20
-    y_pos -= 10
-
-    # Charts
-    for chart in charts:
-        img_buf = save_chart_image(chart)
-        img = Image.open(img_buf)
-        img_reader = ImageReader(img)
-        if y_pos < 250:
-            c.showPage()
-            y_pos = height - 50
-        c.drawImage(img_reader, 50, y_pos-250, width=500, height=250)
-        y_pos -= 270
-
+        c.drawString(60,y_pos,f"- {insight}")
+        y_pos-=20
     c.save()
     buffer.seek(0)
     return buffer
 
-metrics_dict = {
-    "Total Generation (GWh)": f"{total_gen:,.0f}",
-    "Total CO₂ (tonnes)": f"{total_emissions:,.0f}",
-    "Tree Equivalent": f"{equiv['trees']:,} trees"
+metrics_dict={
+    "Total Generation (GWh)":f"{total_gen:,.0f}",
+    "Total CO₂ (tonnes)":f"{total_emissions:,.0f}",
+    "Tree Equivalent":f"{equiv['trees']:,} trees"
 }
 
 if st.button("📄 Generate & Download PDF Report"):
-    charts_to_save = [chart_gen_source, chart_em_source]
-    if 'chart_forecast' in locals():
-        charts_to_save.append(chart_forecast)
-    pdf_buffer = generate_pdf(metrics_dict, insights_list, charts_to_save)
+    pdf_buffer=generate_pdf(metrics_dict, insights_list)
     st.download_button(
         label="📥 Download PDF",
         data=pdf_buffer,
