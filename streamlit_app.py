@@ -105,6 +105,7 @@ if 'plant' in df.columns:
     st.subheader(f"🏭 Plant: {selected_plant}")
 else:
     plant_df = df.copy()  # fallback if no plant column
+    selected_plant = "All Plants"  # fallback to prevent NameError
 
 # ------------------------
 # Aggregations
@@ -184,23 +185,30 @@ col1.altair_chart(chart_gen_annual)
 col2.altair_chart(chart_em_annual)
 
 # ------------------------
-# Summary metrics & equivalents
+# Summary metrics & equivalents (Plant-safe)
 # ------------------------
 st.subheader("📌 Key Metrics")
 total_gen = gen_by_source['generation_gwh'].sum()
-total_emissions = em_by_source['co2_tonnes'].sum() if 'co2_tonnes' in plant_df.columns else 0
+
+# Plant-level emissions
+if 'co2_tonnes' in plant_df.columns:
+    total_emissions = plant_df['co2_tonnes'].sum()
+else:
+    total_emissions = 0
 equiv_plant = human_equivalents(total_emissions)
 
-# Total equivalents across all plants
-total_emissions_all = df['co2_tonnes'].sum() if 'co2_tonnes' in df.columns else 0
+# Total emissions across all plants
+if 'co2_tonnes' in df.columns:
+    total_emissions_all = df['co2_tonnes'].sum()
+else:
+    total_emissions_all = 0
 equiv_total = human_equivalents(total_emissions_all)
 
 c1, c2, c3 = st.columns(3)
 c1.metric("⚡ Total Generation (GWh)", f"{total_gen:,.0f}")
 c2.metric("🌫️ Total CO₂ (tonnes)", f"{total_emissions:,.0f}")
 c3.metric("🌳 Tree Equivalent", f"{equiv_plant['trees']:,} trees")
-st.markdown(f"Other equivalents for this plant: {equiv_plant['cars']:,} cars off the road per year • {equiv_plant['homes']:,} homes powered per year")
-st.markdown(f"Total equivalents across all plants: {equiv_total['cars']:,} cars off the road per year • {equiv_total['homes']:,} homes powered per year")
+st.markdown(f"Other equivalents: {equiv_plant['cars']:,} cars off the road per year • {equiv_plant['homes']:,} homes powered per year")
 
 # ------------------------
 # Quick Forecast
@@ -235,7 +243,7 @@ if len(annual) >= 2:
     st.altair_chart(chart_forecast)
 
 # ------------------------
-# Insights
+# Insights (Plant + Total)
 # ------------------------
 insights_list = [
     f"Carbon saved by {selected_plant} this year is equivalent to planting {equiv_plant['trees']} trees.",
