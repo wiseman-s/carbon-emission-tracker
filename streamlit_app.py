@@ -3,15 +3,15 @@ import streamlit as st
 import pandas as pd
 import altair as alt
 import numpy as np
-from carbon_loader import load_energy_data, human_equivalents
+from carbon_loader import human_equivalents
 from sklearn.linear_model import LinearRegression
 from io import BytesIO
 from reportlab.pdfgen import canvas
 from reportlab.lib.pagesizes import letter
-from reportlab.lib.utils import ImageReader
-from PIL import Image
 
+# ------------------------
 # Page config
+# ------------------------
 st.set_page_config(
     page_title="Carbon Emission Tracker",
     page_icon="🌍",
@@ -19,7 +19,7 @@ st.set_page_config(
 )
 
 # ------------------------
-# Heading always visible
+# Heading
 # ------------------------
 st.title("🌍 Carbon Emission Tracker")
 st.markdown("### Visualize, estimate, and explore emission scenarios for energy generation")
@@ -31,20 +31,75 @@ st.sidebar.title("Carbon Emission Tracker")
 st.sidebar.markdown("Powering People for a Better Tomorrow — sustainable, reliable, affordable energy.")
 st.sidebar.markdown("---")
 
+# ------------------------
+# Dataset guidelines and sample
+# ------------------------
+st.sidebar.markdown("### Dataset Guidelines")
+st.sidebar.markdown("""
+- **Required columns**: `year`, `source`, `generation_gwh`, `co2_tonnes`
+- `year` should be numeric (e.g., 2023)
+- `source` should be one of: Hydro, Solar, Wind, Geothermal, Thermal
+- `generation_gwh` and `co2_tonnes` must be numeric
+""")
+
+st.sidebar.markdown("#### Sample Dataset")
+sample_df = pd.DataFrame({
+    "year": [2023, 2023, 2023],
+    "source": ["Hydro", "Solar", "Wind"],
+    "generation_gwh": [500, 200, 150],
+    "co2_tonnes": [0, 50, 30]
+})
+st.sidebar.dataframe(sample_df)
+
+# ------------------------
 # Persist dataset in session_state
+# ------------------------
 if 'df' not in st.session_state:
     st.session_state.df = None
     st.session_state.message = None
 
+# ------------------------
+# Safe data loader
+# ------------------------
+def load_energy_data_safe(uploaded_file):
+    if uploaded_file.name.endswith(".csv"):
+        df = pd.read_csv(uploaded_file)
+    else:
+        df = pd.read_excel(uploaded_file)
+    
+    required_cols = ["year", "source", "generation_gwh", "co2_tonnes"]
+    missing_cols = [col for col in required_cols if col not in df.columns]
+    message = None
+    
+    if missing_cols:
+        message = f"Warning: Missing columns: {', '.join(missing_cols)}. These will be filled with defaults."
+        for col in missing_cols:
+            if col == "source":
+                df[col] = "Unknown"
+            else:
+                df[col] = 0
+
+    # Ensure numeric columns
+    for col in ["year", "generation_gwh", "co2_tonnes"]:
+        df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
+
+    # Drop rows with completely missing key info
+    df = df.dropna(subset=["year", "source"])
+    
+    return df, message
+
+# ------------------------
+# Upload or load demo data
+# ------------------------
 uploaded_file = st.sidebar.file_uploader("Upload Energy Data (CSV or Excel)", type=["csv", "xlsx"])
 
 if uploaded_file:
-    df, message = load_energy_data(uploaded_file)
+    df, message = load_energy_data_safe(uploaded_file)
     st.session_state.df = df
     st.session_state.message = message
 else:
     if st.sidebar.button("Load demo sample data"):
-        df, message = load_energy_data("sample_data/sample_energy_data.csv")
+        df, message = load_energy_data_safe("sample_data/sample_energy_data.csv")
         st.session_state.df = df
         st.session_state.message = message
 
@@ -59,14 +114,14 @@ if message:
     st.warning(message)
 
 # ------------------------
-# Data preview & normalization
+# Data preview
 # ------------------------
 st.subheader("Preview of cleaned data (first 20 rows)")
 st.dataframe(df.head(20))
 
 df['source'] = df['source'].str.title()
 
-# Fill missing CO2 or generation columns with 0
+# Fill missing generation or co2 columns
 if 'generation_gwh' not in df.columns:
     df['generation_gwh'] = 0
 if 'co2_tonnes' not in df.columns:
@@ -83,7 +138,7 @@ annual = df.groupby("year", as_index=False).agg(
 ).sort_values("year")
 
 # ------------------------
-# Charts with different colors
+# Charts
 # ------------------------
 colors = {
     "Hydro": "#1f77b4",
@@ -92,9 +147,6 @@ colors = {
     "Geothermal": "#d62728",
     "Thermal": "#9467bd",
 }
-
-def get_color(source):
-    return colors.get(source, "#8c564b")  # default color
 
 st.subheader("📊 Energy Generation by Source (Total)")
 chart_gen_source = alt.Chart(gen_by_source).mark_bar().encode(
@@ -130,7 +182,7 @@ col1.altair_chart(chart_gen_annual)
 col2.altair_chart(chart_em_annual)
 
 # ------------------------
-# Summary metrics & equivalents
+# Key metrics
 # ------------------------
 st.subheader("📌 Key Metrics")
 total_gen = gen_by_source['generation_gwh'].sum()
@@ -187,7 +239,7 @@ for i, insight in enumerate(insights_list, 1):
     st.markdown(f"{i}. {insight}")
 
 # ------------------------
-# PDF generation (Cloud-compatible)
+# PDF generation (cloud-safe)
 # ------------------------
 def generate_pdf(metrics_dict, insights_list, df_preview):
     buffer = BytesIO()
@@ -214,14 +266,14 @@ def generate_pdf(metrics_dict, insights_list, df_preview):
         y_pos -= 20
     y_pos -= 10
 
-    # Add a small table (first 10 rows)
+    # Sample data table
     c.setFont("Helvetica-Bold", 14)
     c.drawString(50, y_pos, "Sample Data:")
     y_pos -= 20
     c.setFont("Helvetica", 10)
     for i, row in df_preview.head(10).iterrows():
         row_text = ", ".join(f"{col}: {row[col]}" for col in df_preview.columns)
-        c.drawString(60, y_pos, row_text[:120])  # truncate long rows
+        c.drawString(60, y_pos, row_text[:120])
         y_pos -= 15
         if y_pos < 50:
             c.showPage()
@@ -245,4 +297,3 @@ if st.button("📄 Generate & Download PDF Report"):
         file_name="carbon_emission_report.pdf",
         mime="application/pdf"
     )
-
