@@ -98,11 +98,9 @@ if 'plant' in df.columns:
 # ------------------------
 # Aggregations
 # ------------------------
-# By source
 gen_by_source = df.groupby("source", as_index=False)["generation_gwh"].sum().sort_values(by="generation_gwh", ascending=False)
 em_by_source = df.groupby("source", as_index=False)["co2_tonnes"].sum().sort_values(by="co2_tonnes", ascending=False)
 
-# By plant
 if 'plant' in df.columns:
     gen_by_plant = df.groupby("plant", as_index=False)["generation_gwh"].sum().sort_values(by="generation_gwh", ascending=False)
     em_by_plant = df.groupby("plant", as_index=False)["co2_tonnes"].sum().sort_values(by="co2_tonnes", ascending=False)
@@ -113,24 +111,31 @@ annual = df.groupby("year", as_index=False).agg(
 ).sort_values("year")
 
 # ------------------------
+# Define consistent color scale
+# ------------------------
+color_scale = alt.Scale(
+    domain=["Hydro", "Solar", "Geothermal", "Wind"],
+    range=["#1f77b4", "#ff7f0e", "#2ca02c", "#d62728"]  # Blue, Orange, Green, Red
+)
+
+# ------------------------
 # Charts by source
 # ------------------------
 st.subheader("📊 Energy Generation by Source (Total)")
-color_map = {"Hydro":"#1f77b4", "Wind":"#ff7f0e", "Solar":"#2ca02c", "Geothermal":"#d62728"}
 chart_gen_source = alt.Chart(gen_by_source).mark_bar().encode(
-    x=alt.X("source:N", sort='-y', title="Energy Source"),
-    y=alt.Y("generation_gwh:Q", title="Total Generation (GWh)"),
-    color=alt.Color("source:N", scale=alt.Scale(domain=list(color_map.keys()), range=list(color_map.values()))),
-    tooltip=[alt.Tooltip("source:N"), alt.Tooltip("generation_gwh:Q", format=",.2f")]
+    x=alt.X("source", title="Energy Source"),
+    y=alt.Y("generation_gwh", title="Total Generation (GWh)"),
+    color=alt.Color("source", scale=color_scale, legend=alt.Legend(title="Energy Source")),
+    tooltip=["source", "generation_gwh"]
 ).properties(height=400, width=700)
 st.altair_chart(chart_gen_source)
 
 st.subheader("🌫️ CO₂ Emissions by Source (Total)")
 chart_em_source = alt.Chart(em_by_source).mark_bar().encode(
-    x=alt.X("source:N", sort='-y', title="Energy Source"),
-    y=alt.Y("co2_tonnes:Q", title="Total CO₂ Emissions (tonnes)"),
-    color=alt.Color("source:N", scale=alt.Scale(domain=list(color_map.keys()), range=list(color_map.values()))),
-    tooltip=[alt.Tooltip("source:N"), alt.Tooltip("co2_tonnes:Q", format=",.0f")]
+    x=alt.X("source", title="Energy Source"),
+    y=alt.Y("co2_tonnes", title="Total CO₂ Emissions (tonnes)"),
+    color=alt.Color("source", scale=color_scale, legend=alt.Legend(title="Energy Source")),
+    tooltip=["source", "co2_tonnes"]
 ).properties(height=400, width=700)
 st.altair_chart(chart_em_source)
 
@@ -139,18 +144,20 @@ st.altair_chart(chart_em_source)
 # ------------------------
 if 'plant' in df.columns:
     st.subheader("🏭 Energy Generation by Plant")
-    chart_gen_plant = alt.Chart(gen_by_plant).mark_bar().encode(
-        x=alt.X("plant:N", sort='-y', title="Plant"),
-        y=alt.Y("generation_gwh:Q", title="Total Generation (GWh)"),
-        tooltip=[alt.Tooltip("plant:N"), alt.Tooltip("generation_gwh:Q", format=",.2f")]
+    chart_gen_plant = alt.Chart(df).mark_bar().encode(
+        x=alt.X("plant", title="Plant"),
+        y=alt.Y("generation_gwh", title="Generation (GWh)"),
+        color=alt.Color("source", scale=color_scale, legend=alt.Legend(title="Energy Source")),
+        tooltip=["plant", "source", "generation_gwh"]
     ).properties(height=400, width=700)
     st.altair_chart(chart_gen_plant)
 
     st.subheader("🌫️ CO₂ Emissions by Plant")
-    chart_em_plant = alt.Chart(em_by_plant).mark_bar().encode(
-        x=alt.X("plant:N", sort='-y', title="Plant"),
-        y=alt.Y("co2_tonnes:Q", title="Total CO₂ Emissions (tonnes)"),
-        tooltip=[alt.Tooltip("plant:N"), alt.Tooltip("co2_tonnes:Q", format=",.0f")]
+    chart_em_plant = alt.Chart(df).mark_bar().encode(
+        x=alt.X("plant", title="Plant"),
+        y=alt.Y("co2_tonnes", title="CO₂ Emissions (tonnes)"),
+        color=alt.Color("source", scale=color_scale, legend=alt.Legend(title="Energy Source")),
+        tooltip=["plant", "source", "co2_tonnes"]
     ).properties(height=400, width=700)
     st.altair_chart(chart_em_plant)
 
@@ -158,12 +165,12 @@ if 'plant' in df.columns:
 # Annual Trends
 # ------------------------
 st.subheader("📈 Annual Trends")
-chart_gen_annual = alt.Chart(annual).mark_line(point=True, color="#2E8B57").encode(
+chart_gen_annual = alt.Chart(annual).mark_line(point=True, color="#2ca02c").encode(
     x="year:Q",
     y="total_generation_gwh:Q",
     tooltip=[alt.Tooltip("year:Q"), alt.Tooltip("total_generation_gwh:Q", format=",.0f")]
 ).properties(height=300, width=600)
-chart_em_annual = alt.Chart(annual).mark_line(point=True, color="#FF8C00").encode(
+chart_em_annual = alt.Chart(annual).mark_line(point=True, color="#d62728").encode(
     x="year:Q",
     y="total_emissions_tonnes:Q",
     tooltip=[alt.Tooltip("year:Q"), alt.Tooltip("total_emissions_tonnes:Q", format=",.0f")]
@@ -198,10 +205,12 @@ if len(annual) >= 2:
         X = annual['year'].values.reshape(-1,1)
         y = annual['total_generation_gwh'].values
         y_label = "Generation (GWh)"
+        line_color = "#2ca02c"  # Green for clean energy
     else:
         X = annual['year'].values.reshape(-1,1)
         y = annual['total_emissions_tonnes'].values
         y_label = "CO₂ (tonnes)"
+        line_color = "#d62728"  # Red for emissions
     model = LinearRegression()
     model.fit(X, y)
     last_year = int(annual['year'].max())
@@ -210,7 +219,7 @@ if len(annual) >= 2:
     hist_df = pd.DataFrame({"year": annual['year'], "value": y})
     fut_df = pd.DataFrame({"year": future_years, "value": preds})
     comb = pd.concat([hist_df, fut_df], ignore_index=True)
-    chart_forecast = alt.Chart(comb).mark_line(point=True, color="#6A5ACD").encode(
+    chart_forecast = alt.Chart(comb).mark_line(point=True, color=line_color).encode(
         x="year:Q",
         y=alt.Y("value:Q", title=y_label),
         tooltip=[alt.Tooltip("year:Q"), alt.Tooltip("value:Q", format=",.0f")]
@@ -218,44 +227,14 @@ if len(annual) >= 2:
     st.altair_chart(chart_forecast)
 
 # ------------------------
-# Creative Insights (Plant-level & Total)
+# Insights
 # ------------------------
-def approx_number(x):
-    """Round numbers to nearest hundred or nearest ten if small"""
-    if x >= 1000:
-        return f"{int(round(x, -2)):,}"  # nearest hundred
-    elif x >= 100:
-        return f"{int(round(x, -1)):,}"  # nearest ten
-    else:
-        return str(int(x))
-
-insights_list = []
-
-# Plant-level insights
-if 'plant' in df.columns:
-    selected_plant = st.selectbox("Select Plant for Detailed Insights", options=sorted(df['plant'].unique()))
-    st.session_state.selected_plant = selected_plant
-
-    plant_df = df[df['plant'] == selected_plant]
-    total_em_plant = plant_df['co2_tonnes'].sum() if 'co2_tonnes' in df.columns else 0
-    equiv_plant = human_equivalents(total_em_plant)
-
-    insights_list.append(
-        f"By using energy from {selected_plant}, we reduced carbon emissions equivalent to planting ~{approx_number(equiv_plant['trees'])} trees, "
-        f"taking ~{approx_number(equiv_plant['cars'])} cars off the road, and powering ~{approx_number(equiv_plant['homes'])} home(s) sustainably."
-    )
-
-# Total metrics across all plants
-insights_list.append(
-    f"Across all plants, sustainable energy has helped save ~{approx_number(equiv['trees'])} trees, "
-    f"reduced emissions equivalent to taking ~{approx_number(equiv['cars'])} cars off the road, "
-    f"and powered ~{approx_number(equiv['homes'])} home(s)."
-)
-insights_list.append(
+insights_list = [
+    f"Approx. carbon saved this year is like planting {equiv['trees']:,} trees.",
+    f"Approx. emissions cut equals removing {equiv['cars']:,} cars from the road.",
+    f"Approx. sustainable energy supplied could power {equiv['homes']:,} homes.",
     "Using renewable energy reduces emissions, improves air quality, and supports Kenya’s sustainable energy vision."
-)
-
-# Display insights
+]
 st.subheader("💡 Insights")
 for i, insight in enumerate(insights_list, 1):
     st.markdown(f"{i}. {insight}")
@@ -344,4 +323,3 @@ st.markdown(
     """,
     unsafe_allow_html=True
 )
-
