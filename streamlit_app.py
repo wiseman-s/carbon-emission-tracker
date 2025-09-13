@@ -10,12 +10,26 @@ from reportlab.lib.pagesizes import letter
 from PIL import Image
 from reportlab.lib.utils import ImageReader
 
-# Safe import for altair_saver
-try:
-    from altair_saver import save as alt_save
-    ALT_SAVER_AVAILABLE = True
-except ModuleNotFoundError:
-    ALT_SAVER_AVAILABLE = False
+# ------------------------
+# Safe chart-to-PNG function
+# ------------------------
+def save_chart_image(chart):
+    """
+    Attempt to save an Altair chart to PNG.
+    If altair_saver is not installed, return None.
+    """
+    try:
+        from io import BytesIO
+        from altair_saver import save as alt_save
+        buf = BytesIO()
+        alt_save(chart, fp=buf, fmt="png", scale_factor=2)
+        buf.seek(0)
+        return buf
+    except ModuleNotFoundError:
+        # altair_saver not installed, skip chart
+        return None
+    except Exception:
+        return None
 
 # ------------------------
 # Page config
@@ -122,137 +136,36 @@ st.subheader("Preview of cleaned data (first 20 rows)")
 st.dataframe(df.head(20))
 
 # ------------------------
-# Per-row CO2 avoided with invalid highlight
+# Metrics & insights
 # ------------------------
-st.subheader("🌱 Impact per Entry (CO₂ Avoided)")
+total_gen = df['generation_gwh'].sum()
+total_emissions = df['co2_tonnes'].sum()
+total_avoided = df['avoided_co2'].sum()
 
-def highlight_invalid(row):
-    return ['background-color: #ffcccc' if not row.valid else '' for _ in row]
-
-df_display = df.copy()
-df_display['avoided_co2'] = df_display['avoided_co2'].round(0)
-st.dataframe(df_display[['year','source','generation_gwh','co2_tonnes','avoided_co2','valid']].style.apply(highlight_invalid, axis=1))
-
-# ------------------------
-# Aggregations
-# ------------------------
-gen_by_source = df.groupby("source", as_index=False)["generation_gwh"].sum().sort_values("generation_gwh", ascending=False)
-em_by_source = df.groupby("source", as_index=False)["co2_tonnes"].sum().sort_values("co2_tonnes", ascending=False)
-avoided_by_source = df.groupby("source", as_index=False)["avoided_co2"].sum().sort_values("avoided_co2", ascending=False)
-annual = df.groupby("year", as_index=False).agg(
-    total_generation_gwh=pd.NamedAgg(column="generation_gwh", aggfunc="sum"),
-    total_emissions_tonnes=pd.NamedAgg(column="co2_tonnes", aggfunc="sum"),
-    total_avoided_co2=pd.NamedAgg(column="avoided_co2", aggfunc="sum")
-).sort_values("year")
-annual['year'] = annual['year'].astype(int)
-
-# ------------------------
-# Charts
-# ------------------------
-colors = {"Hydro":"#1f77b4","Solar":"#ff7f0e","Wind":"#2ca02c","Geothermal":"#d62728","Thermal":"#9467bd"}
-
-st.subheader("📊 Energy Generation by Source (Total)")
-chart_gen_source = alt.Chart(gen_by_source).mark_bar().encode(
-    x=alt.X("source:N", sort='-y', title="Energy Source"),
-    y=alt.Y("generation_gwh:Q", title="Total Generation (GWh)"),
-    color=alt.Color("source:N", scale=alt.Scale(domain=list(colors.keys()), range=list(colors.values())), legend=None),
-    tooltip=[alt.Tooltip("source:N"), alt.Tooltip("generation_gwh:Q", format=",.2f")]
-).properties(height=400, width=700)
-st.altair_chart(chart_gen_source)
-
-st.subheader("🌫️ CO₂ Emissions by Source (Total)")
-chart_em_source = alt.Chart(em_by_source).mark_bar().encode(
-    x=alt.X("source:N", sort='-y', title="Energy Source"),
-    y=alt.Y("co2_tonnes:Q", title="Total CO₂ Emissions (tonnes)"),
-    color=alt.Color("source:N", scale=alt.Scale(domain=list(colors.keys()), range=list(colors.values())), legend=None),
-    tooltip=[alt.Tooltip("source:N"), alt.Tooltip("co2_tonnes:Q", format=",.0f")]
-).properties(height=400, width=700)
-st.altair_chart(chart_em_source)
-
-st.subheader("🌱 Avoided CO₂ by Source (Total)")
-chart_avoided_source = alt.Chart(avoided_by_source).mark_bar().encode(
-    x=alt.X("source:N", sort='-y', title="Energy Source"),
-    y=alt.Y("avoided_co2:Q", title="Avoided CO₂ (tonnes)"),
-    color=alt.Color("source:N", scale=alt.Scale(domain=list(colors.keys()), range=list(colors.values())), legend=None),
-    tooltip=[alt.Tooltip("source:N"), alt.Tooltip("avoided_co2:Q", format=",.0f")]
-).properties(height=400, width=700)
-st.altair_chart(chart_avoided_source)
-
-st.subheader("📈 Annual Trends")
-chart_gen_annual = alt.Chart(annual).mark_line(point=True, color="#2E8B57").encode(
-    x="year:Q", y="total_generation_gwh:Q",
-    tooltip=[alt.Tooltip("year:Q"), alt.Tooltip("total_generation_gwh:Q", format=",.0f")]
-).properties(height=300, width=600)
-chart_em_annual = alt.Chart(annual).mark_line(point=True, color="#FF8C00").encode(
-    x="year:Q", y="total_emissions_tonnes:Q",
-    tooltip=[alt.Tooltip("year:Q"), alt.Tooltip("total_emissions_tonnes:Q", format=",.0f")]
-).properties(height=300, width=600)
-chart_avoided_annual = alt.Chart(annual).mark_line(point=True, color="#6A5ACD").encode(
-    x="year:Q", y="total_avoided_co2:Q",
-    tooltip=[alt.Tooltip("year:Q"), alt.Tooltip("total_avoided_co2:Q", format=",.0f")]
-).properties(height=300, width=600)
-col1,col2,col3 = st.columns(3)
-col1.altair_chart(chart_gen_annual)
-col2.altair_chart(chart_em_annual)
-col3.altair_chart(chart_avoided_annual)
-
-# ------------------------
-# Key metrics
-# ------------------------
-total_gen = annual['total_generation_gwh'].sum()
-total_emissions = annual['total_emissions_tonnes'].sum()
-total_avoided = annual['total_avoided_co2'].sum()
-c1,c2,c3 = st.columns(3)
-c1.metric("⚡ Total Generation (GWh)", f"{total_gen:,.0f}")
-c2.metric("🌫️ Total CO₂ Emissions (tonnes)", f"{total_emissions:,.0f}")
-c3.metric("🌱 Total CO₂ Avoided (tonnes)", f"{total_avoided:,.0f}")
-
-# ------------------------
-# Quick forecast
-# ------------------------
-st.subheader("🔮 Quick Forecast (experimental)")
-forecast_target = st.selectbox("Forecast target", options=["Total Generation (GWh)","Total CO₂ (tonnes)","Total CO₂ Avoided (tonnes)"])
-n_years = st.slider("Forecast years ahead",1,10,3)
-
-if len(annual) >= 2:
-    if forecast_target=="Total Generation (GWh)":
-        X = annual['year'].values.reshape(-1,1); y=annual['total_generation_gwh'].values; y_label="Generation (GWh)"
-    elif forecast_target=="Total CO₂ (tonnes)":
-        X = annual['year'].values.reshape(-1,1); y=annual['total_emissions_tonnes'].values; y_label="CO₂ (tonnes)"
-    else:
-        X = annual['year'].values.reshape(-1,1); y=annual['total_avoided_co2'].values; y_label="Avoided CO₂ (tonnes)"
-    model = LinearRegression(); model.fit(X,y)
-    last_year = int(annual['year'].max())
-    future_years = np.arange(last_year+1,last_year+1+n_years)
-    preds = model.predict(future_years.reshape(-1,1))
-    hist_df = pd.DataFrame({"year":annual['year'],"value":y})
-    fut_df = pd.DataFrame({"year":future_years,"value":preds})
-    comb = pd.concat([hist_df,fut_df],ignore_index=True)
-    chart_forecast = alt.Chart(comb).mark_line(point=True,color="#6A5ACD").encode(
-        x="year:Q", y=alt.Y("value:Q", title=y_label),
-        tooltip=[alt.Tooltip("year:Q"), alt.Tooltip("value:Q",format=",.0f")]
-    ).properties(height=350,width=700)
-    st.altair_chart(chart_forecast)
-
-# ------------------------
-# Kenya-focused insights
-# ------------------------
 trees = int(total_avoided/22)  # approx CO2 avoided per tree
 cars = int(total_avoided/4.6)  # approx CO2 per car per year
 homes = int(total_avoided/7.5) # approx CO2 per home per year
+
 insights_list=[
     f"In Kenya, carbon saved this year is equivalent to planting {trees} trees.",
     f"This reduction is like taking {cars} cars off Kenyan roads.",
     f"Sustainable energy has powered approximately {homes} Kenyan homes.",
     "Renewable energy adoption in Kenya improves air quality and supports national energy goals."
 ]
+
+st.subheader("💡 Key Metrics")
+c1,c2,c3 = st.columns(3)
+c1.metric("⚡ Total Generation (GWh)", f"{total_gen:,.0f}")
+c2.metric("🌫️ Total CO₂ Emissions (tonnes)", f"{total_emissions:,.0f}")
+c3.metric("🌱 Total CO₂ Avoided (tonnes)", f"{total_avoided:,.0f}")
+
 st.subheader("💡 Insights")
 for i,insight in enumerate(insights_list,1): st.markdown(f"{i}. {insight}")
 
 # ------------------------
 # PDF Generation
 # ------------------------
-def generate_pdf(metrics_dict, insights_list, charts):
+def generate_pdf(metrics_dict, insights_list):
     buffer = BytesIO()
     c = canvas.Canvas(buffer,pagesize=letter)
     width,height = letter
@@ -267,15 +180,6 @@ def generate_pdf(metrics_dict, insights_list, charts):
     for insight in insights_list: c.drawString(60,y_pos,f"- {insight}"); y_pos-=20
     y_pos-=10
 
-    for chart in charts:
-        img_buf = save_chart_image(chart)
-        if img_buf is None: continue
-        img = Image.open(img_buf)
-        img_reader = ImageReader(img)
-        if y_pos<250: c.showPage(); y_pos=height-50
-        c.drawImage(img_reader,50,y_pos-250,width=500,height=250)
-        y_pos-=270
-
     c.save(); buffer.seek(0)
     return buffer
 
@@ -285,9 +189,6 @@ metrics_dict = {
     "Total CO₂ Avoided (tonnes)": f"{total_avoided:,.0f}"
 }
 
-charts_to_save = [chart_gen_source, chart_em_source, chart_avoided_source]
-if 'chart_forecast' in locals(): charts_to_save.append(chart_forecast)
-
 if st.button("📄 Generate & Download PDF Report"):
-    pdf_buffer = generate_pdf(metrics_dict, insights_list, charts_to_save)
+    pdf_buffer = generate_pdf(metrics_dict, insights_list)
     st.download_button(label="📥 Download PDF", data=pdf_buffer, file_name="kenya_carbon_report.pdf", mime="application/pdf")
