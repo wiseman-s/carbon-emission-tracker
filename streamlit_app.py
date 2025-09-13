@@ -3,7 +3,6 @@ import streamlit as st
 import pandas as pd
 import altair as alt
 import numpy as np
-from carbon_loader import human_equivalents
 from sklearn.linear_model import LinearRegression
 from io import BytesIO
 from reportlab.pdfgen import canvas
@@ -28,10 +27,10 @@ st.sidebar.markdown("Powering People for a Better Tomorrow — sustainable, reli
 st.sidebar.markdown("---")
 st.sidebar.markdown("### Dataset Guidelines")
 st.sidebar.markdown("""
-- Required columns: `year`, `source`, `generation_gwh`, `co2_tonnes`
-- `year` numeric (e.g., 2023)
-- `source` in Hydro, Solar, Wind, Geothermal, Thermal
-- `generation_gwh` numeric
+- Required columns: `year`, `source`, `generation_gwh`, `co2_tonnes` (optional)
+- `year`: numeric (e.g., 2023)
+- `source`: Hydro, Solar, Wind, Geothermal, Thermal
+- `generation_gwh`: numeric
 - Missing `co2_tonnes` will be calculated automatically
 """)
 st.sidebar.markdown("#### Sample Dataset")
@@ -51,7 +50,7 @@ if 'df' not in st.session_state:
     st.session_state.message = None
 
 # ------------------------
-# Default CO2 emission factors
+# Default CO2 emission factors (tonnes per GWh)
 # ------------------------
 default_emission_factors = {"Hydro":0,"Solar":0,"Wind":0,"Geothermal":5,"Thermal":900,"Unknown":100}
 
@@ -80,6 +79,7 @@ def load_energy_data_safe(uploaded_file=None):
         df['generation_gwh'] = pd.to_numeric(df['generation_gwh'], errors='coerce')
         df['co2_tonnes'] = pd.to_numeric(df.get('co2_tonnes',0), errors='coerce')
 
+        # Calculate missing CO2
         df['co2_tonnes'] = df.apply(lambda row: row['generation_gwh']*default_emission_factors.get(row['source'],100)
                                     if pd.isna(row['co2_tonnes']) or row['co2_tonnes']==0 else row['co2_tonnes'], axis=1)
         df['valid'] = df['year'].notna() & df['source'].notna() & df['generation_gwh'].notna() & df['co2_tonnes'].notna()
@@ -159,8 +159,16 @@ col2.altair_chart(chart_em_annual)
 st.subheader("📌 Key Metrics")
 total_gen = gen_by_source['generation_gwh'].sum()
 total_emissions = em_by_source['co2_tonnes'].sum()
+
+def human_equivalents(total_co2_tonnes):
+    total_kg = total_co2_tonnes*1000
+    trees = int(total_kg / 22)  # 1 tree absorbs ~22kg/year
+    cars = int(total_co2_tonnes / 4.6)  # 1 car ~4.6 tonnes/year
+    homes = int(total_co2_tonnes / 7.5)  # 1 home ~7.5 tonnes/year
+    return {"trees":trees,"cars":cars,"homes":homes}
+
 equiv = human_equivalents(total_emissions)
-c1, c2, c3 = st.columns(3)
+c1,c2,c3 = st.columns(3)
 c1.metric("⚡ Total Generation (GWh)", f"{total_gen:,.0f}")
 c2.metric("🌫️ Total CO₂ (tonnes)", f"{total_emissions:,.0f}")
 c3.metric("🌳 Tree Equivalent", f"{equiv['trees']:,} trees")
@@ -173,14 +181,14 @@ forecast_target = st.selectbox("Forecast target", options=["Total Generation (GW
 n_years = st.slider("Forecast years ahead",1,10,3)
 if len(annual)>=2:
     if forecast_target.startswith("Total Generation"):
-        X = annual['year'].values.reshape(-1,1)
-        y = annual['total_generation_gwh'].values
+        X=annual['year'].values.reshape(-1,1)
+        y=annual['total_generation_gwh'].values
         y_label="Generation (GWh)"
     else:
-        X = annual['year'].values.reshape(-1,1)
-        y = annual['total_emissions_tonnes'].values
+        X=annual['year'].values.reshape(-1,1)
+        y=annual['total_emissions_tonnes'].values
         y_label="CO₂ (tonnes)"
-    model = LinearRegression()
+    model=LinearRegression()
     model.fit(X,y)
     last_year=int(annual['year'].max())
     future_years=np.arange(last_year+1,last_year+1+n_years)
@@ -189,8 +197,8 @@ if len(annual)>=2:
     fut_df=pd.DataFrame({"year":future_years,"value":preds})
     comb=pd.concat([hist_df,fut_df],ignore_index=True)
     chart_forecast=alt.Chart(comb).mark_line(point=True,color="#6A5ACD").encode(
-        x="year:Q", y=alt.Y("value:Q",title=y_label),
-        tooltip=[alt.Tooltip("year:Q"), alt.Tooltip("value:Q",format=",.0f")]
+        x="year:Q",y=alt.Y("value:Q",title=y_label),
+        tooltip=[alt.Tooltip("year:Q"),alt.Tooltip("value:Q",format=",.0f")]
     ).properties(height=350,width=700)
     st.altair_chart(chart_forecast)
 
