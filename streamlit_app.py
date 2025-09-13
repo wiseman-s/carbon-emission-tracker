@@ -34,26 +34,26 @@ st.sidebar.markdown("Powering People for a Better Tomorrow — sustainable, reli
 st.sidebar.markdown("---")
 
 # ------------------------
-# Upload Guidelines (enhanced with emojis)
+# Upload Guidelines (Plant-Level)
 # ------------------------
 st.sidebar.markdown(
     """
-    ## 📄 Upload Guidelines
+    ## 📄 Upload Guidelines (Plant-Level)
     Please follow these rules when uploading your energy data:
 
     - Only **CSV** or **Excel** files are allowed.
-    - Ensure column names match the required format:  
-      **📅 Month | ⚡ Geothermal | 💧 Hydro | ☀️ Solar | 🌬️ Wind**
-    - Dates should be in **ISO format** (YYYY-MM-DD).
-    - Avoid empty rows or columns.
+    - Columns must match this format:  
+      **📅 Month | 🏭 Plant | ⚡ Geothermal | 💧 Hydro | ☀️ Solar | 🌬️ Wind**
+    - Dates should be in **ISO format** (YYYY-MM-DD)
+    - Avoid empty rows or columns
 
-    **Example of how your data should look:**
+    **Example:**
 
-    | 📅 Month    | ⚡ Geothermal | 💧 Hydro | ☀️ Solar | 🌬️ Wind |
-    |------------|--------------|----------|----------|---------|
-    | 2023-01-31 | 120          | 340      | 50       | 25      |
-    | 2023-02-28 | 130          | 320      | 60       | 30      |
-    | 2023-03-31 | 125          | 330      | 55       | 28      |
+    | 📅 Month    | 🏭 Plant       | ⚡ Geothermal | 💧 Hydro | ☀️ Solar | 🌬️ Wind |
+    |------------|---------------|--------------|----------|----------|---------|
+    | 2023-01-31 | Olkaria I     | 120          | 0        | 0        | 0       |
+    | 2023-01-31 | Kindaruma     | 0            | 340      | 0        | 0       |
+    | 2023-01-31 | Ngong Wind    | 0            | 0        | 0        | 25      |
     """
 )
 
@@ -92,19 +92,28 @@ if message:
 st.subheader("Preview of cleaned data (first 20 rows)")
 st.dataframe(df.head(20))
 df['source'] = df['source'].str.title()
+if 'plant' in df.columns:
+    df['plant'] = df['plant'].str.title()
 
 # ------------------------
 # Aggregations
 # ------------------------
+# By source (current)
 gen_by_source = df.groupby("source", as_index=False)["generation_gwh"].sum().sort_values(by="generation_gwh", ascending=False)
 em_by_source = df.groupby("source", as_index=False)["co2_tonnes"].sum().sort_values(by="co2_tonnes", ascending=False)
+
+# By plant (new)
+if 'plant' in df.columns:
+    gen_by_plant = df.groupby("plant", as_index=False)["generation_gwh"].sum().sort_values(by="generation_gwh", ascending=False)
+    em_by_plant = df.groupby("plant", as_index=False)["co2_tonnes"].sum().sort_values(by="co2_tonnes", ascending=False)
+
 annual = df.groupby("year", as_index=False).agg(
     total_generation_gwh=pd.NamedAgg(column="generation_gwh", aggfunc="sum"),
     total_emissions_tonnes=pd.NamedAgg(column="co2_tonnes", aggfunc="sum")
 ).sort_values("year")
 
 # ------------------------
-# Charts
+# Charts by source
 # ------------------------
 st.subheader("📊 Energy Generation by Source (Total)")
 color_map = {"Hydro":"#1f77b4", "Wind":"#ff7f0e", "Solar":"#2ca02c", "Geothermal":"#d62728"}
@@ -125,6 +134,29 @@ chart_em_source = alt.Chart(em_by_source).mark_bar().encode(
 ).properties(height=400, width=700)
 st.altair_chart(chart_em_source)
 
+# ------------------------
+# Charts by plant (optional)
+# ------------------------
+if 'plant' in df.columns:
+    st.subheader("🏭 Energy Generation by Plant")
+    chart_gen_plant = alt.Chart(gen_by_plant).mark_bar().encode(
+        x=alt.X("plant:N", sort='-y', title="Plant"),
+        y=alt.Y("generation_gwh:Q", title="Total Generation (GWh)"),
+        tooltip=[alt.Tooltip("plant:N"), alt.Tooltip("generation_gwh:Q", format=",.2f")]
+    ).properties(height=400, width=700)
+    st.altair_chart(chart_gen_plant)
+
+    st.subheader("🌫️ CO₂ Emissions by Plant")
+    chart_em_plant = alt.Chart(em_by_plant).mark_bar().encode(
+        x=alt.X("plant:N", sort='-y', title="Plant"),
+        y=alt.Y("co2_tonnes:Q", title="Total CO₂ Emissions (tonnes)"),
+        tooltip=[alt.Tooltip("plant:N"), alt.Tooltip("co2_tonnes:Q", format=",.0f")]
+    ).properties(height=400, width=700)
+    st.altair_chart(chart_em_plant)
+
+# ------------------------
+# Annual Trends
+# ------------------------
 st.subheader("📈 Annual Trends")
 chart_gen_annual = alt.Chart(annual).mark_line(point=True, color="#2E8B57").encode(
     x="year:Q",
@@ -260,6 +292,8 @@ if st.button("📄 Generate & Download PDF Report"):
     charts_to_save = [chart_gen_source, chart_em_source]
     if chart_forecast:
         charts_to_save.append(chart_forecast)
+    if 'plant' in df.columns:
+        charts_to_save.extend([chart_gen_plant, chart_em_plant])
     pdf_buffer = generate_pdf(metrics_dict, insights_list, charts_to_save)
     st.download_button(
         label="📥 Download PDF",
